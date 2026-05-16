@@ -56,28 +56,25 @@ export async function generatePerspectives(
     ? (['left', 'right', 'historical', 'scientific', 'contrarian'] as const)
     : (['left', 'right', 'historical', 'scientific'] as const);
 
-  const prompt = `You are an expert analytical journalist tasked with providing multiple balanced perspectives on a claim or topic.
+  const prompt = `Analyze this claim from ${perspectiveTypes.length} perspectives. Be concise and sharp.
 
 CLAIM: "${claimText}"
 CATEGORY: ${category}
 
-For each of the following perspectives, provide a structured analysis. Be factual, nuanced, and cite real sources where possible.
+PERSPECTIVES: ${perspectiveTypes.map(t => `${t.toUpperCase()}: ${PERSPECTIVE_PROMPTS[t]}`).join(' | ')}
 
-PERSPECTIVES TO ANALYZE:
-${perspectiveTypes.map((t, i) => `${i + 1}. ${t.toUpperCase()}: ${PERSPECTIVE_PROMPTS[t]}`).join('\n')}
+Return a JSON array. Each element:
+- type: the perspective key (lowercase)
+- label: display name (e.g. "Left Perspective")
+- summary: one punchy sentence, max 100 chars
+- analysis: one focused paragraph, max 80 words, no fluff
+- sources: 1-2 objects with { title, url, domain } — real sources only
 
-Respond with a JSON array. Each element must have:
-- type: one of the perspective type strings above
-- label: a display label (e.g. "Left Perspective")
-- summary: one sentence capturing the core argument (max 120 chars)
-- analysis: 2-3 paragraphs of substantive analysis (300-500 words)
-- sources: array of up to 4 objects with { title, url, domain } — use real publications/studies
-
-Respond with ONLY the JSON array, no other text.`;
+ONLY return the JSON array, nothing else.`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 4096,
+    max_tokens: 1200,
     messages: [{ role: 'user', content: prompt }],
   });
 
