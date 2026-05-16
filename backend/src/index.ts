@@ -7,8 +7,6 @@ import authRouter from './routes/auth.js';
 import claimsRouter from './routes/claims.js';
 import stripeRouter from './routes/stripe.js';
 import adminRouter from './routes/admin.js';
-import { runMigrations } from './db/migrate.js';
-
 dotenv.config();
 
 const app = express();
@@ -32,18 +30,12 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Start migration in background on cold start so it's likely done by first request
-const migrationReady: Promise<void> = process.env.DATABASE_URL
-  ? runMigrations().catch(err => console.error('Migration failed:', err))
-  : Promise.resolve();
-
-// Gate all /api routes on DATABASE_URL presence, then await migration
-app.use('/api', async (_req, res, next) => {
+// Gate all /api routes on DATABASE_URL presence
+app.use('/api', (_req, res, next) => {
   if (!process.env.DATABASE_URL) {
     res.status(503).json({ message: 'DATABASE_URL not configured on Vercel.' });
     return;
   }
-  await migrationReady;
   next();
 });
 
@@ -64,9 +56,7 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // Local dev only
 if (!process.env.VERCEL) {
   const PORT = parseInt(process.env.PORT || '3000', 10);
-  migrationReady.then(() => {
-    app.listen(PORT, () => console.log(`Reality Check API running on port ${PORT}`));
-  });
+  app.listen(PORT, () => console.log(`Reality Check API running on port ${PORT}`));
 }
 
 export default app;
