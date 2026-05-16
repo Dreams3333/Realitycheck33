@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,24 +6,46 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  AppState,
 } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { authService } from '@/services/auth';
 import { useStore } from '@/store/useStore';
+import { stripeApi, authApi } from '@/services/api';
 import { Button } from '@/components/ui/Button';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
-  const { user, logout } = useStore();
+  const { user, logout, setUser } = useStore();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [upgrading, setUpgrading] = useState(false);
+  const [openingPortal, setOpeningPortal] = useState(false);
+  const appState = useRef(AppState.currentState);
   const isPremium = user?.tier === 'premium';
 
   const checksUsed = user?.checksUsedToday ?? 0;
   const dailyLimit = user?.dailyLimit ?? 5;
   const progress = isPremium ? 1 : checksUsed / dailyLimit;
+
+  // Refresh user profile when app returns to foreground (catches webhook-triggered upgrades)
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', async (nextState) => {
+      if (appState.current.match(/inactive|background/) && nextState === 'active') {
+        try {
+          const freshUser = await authApi.me();
+          setUser(freshUser);
+        } catch {
+          // silently ignore — token may have expired
+        }
+      }
+      appState.current = nextState;
+    });
+    return () => sub.remove();
+  }, []);
 
   const handleLogout = async () => {
     Alert.alert('Sign out', 'Are you sure you want to sign out?', [
@@ -42,14 +64,39 @@ export default function ProfileScreen() {
   };
 
   const handleUpgrade = async () => {
-    Alert.alert(
-      'Upgrade to Premium',
-      '$4.99/month — Unlimited checks, all 5 perspectives, deep historical context, saved research library.',
-      [
-        { text: 'Not now', style: 'cancel' },
-        { text: 'Subscribe', onPress: () => Alert.alert('Stripe', 'Stripe checkout would open here.') },
-      ]
-    );
+    try {
+      setUpgrading(true);
+      const { url } = await stripeApi.createCheckout();
+      // Opens Stripe checkout in-app; browser closes when Stripe redirects to realitycheck://
+      const result = await WebBrowser.openAuthSessionAsync(url, 'realitycheck://');
+      if (result.type === 'success') {
+        // Webhook may take a moment — poll /me a couple of times
+        for (let i = 0; i < 3; i++) {
+          await new Promise(r => setTimeout(r, 2000));
+          try {
+            const freshUser = await authApi.me();
+            setUser(freshUser);
+            if (freshUser.tier === 'premium') break;
+          } catch { break; }
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not open checkout. Please try again.');
+    } finally {
+      setUpgrading(false);
+    }
+  };
+
+  const handleManageBilling = async () => {
+    try {
+      setOpeningPortal(true);
+      const { url } = await stripeApi.createPortal();
+      await WebBrowser.openBrowserAsync(url);
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Could not open billing portal.');
+    } finally {
+      setOpeningPortal(false);
+    }
   };
 
   return (
@@ -104,6 +151,17 @@ export default function ProfileScreen() {
           )}
         </View>
 
+        {/* Manage billing for premium users */}
+        {isPremium && (
+          <Button
+            label={openingPortal ? 'Opening…' : 'Manage Billing'}
+            onPress={handleManageBilling}
+            variant="ghost"
+            loading={openingPortal}
+            fullWidth
+          />
+        )}
+
         {/* Premium upgrade */}
         {!isPremium && (
           <TouchableOpacity style={styles.upgradeCard} onPress={handleUpgrade} activeOpacity={0.85}>
@@ -129,8 +187,10 @@ export default function ProfileScreen() {
                 </View>
               ))}
             </View>
-            <View style={styles.upgradeBtn}>
-              <Text style={styles.upgradeBtnText}>Start 7-Day Free Trial</Text>
+            <View style={[styles.upgradeBtn, upgrading && { opacity: 0.7 }]}>
+              <Text style={styles.upgradeBtnText}>
+                {upgrading ? 'Opening Checkout…' : 'Start 7-Day Free Trial'}
+              </Text>
             </View>
           </TouchableOpacity>
         )}

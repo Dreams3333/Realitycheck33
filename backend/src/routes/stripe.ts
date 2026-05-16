@@ -4,23 +4,39 @@ import { query } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const router = Router();
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2023-10-16' });
+
+const API_BASE = 'https://backend-liard-rho-48.vercel.app/api';
+
+function getStripe(): Stripe {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is not configured');
+  }
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2023-10-16' });
+}
+
+// GET /api/stripe/success — Stripe redirects here; we bounce back into the app
+router.get('/success', (_req, res) => {
+  res.redirect('realitycheck://premium-success');
+});
+
+// GET /api/stripe/cancelled
+router.get('/cancelled', (_req, res) => {
+  res.redirect('realitycheck://');
+});
 
 // POST /api/stripe/create-checkout
 router.post('/create-checkout', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
+    const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{ price: process.env.STRIPE_PREMIUM_PRICE_ID, quantity: 1 }],
-      success_url: `${process.env.APP_URL}/premium-success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${process.env.APP_URL}/profile`,
+      success_url: `${API_BASE}/stripe/success`,
+      cancel_url: `${API_BASE}/stripe/cancelled`,
       metadata: { userId: req.user!.id },
-      subscription_data: {
-        trial_period_days: 7,
-      },
+      subscription_data: { trial_period_days: 7 },
     });
-
     res.json({ url: session.url });
   } catch (err: any) {
     res.status(500).json({ message: err.message });
@@ -29,26 +45,31 @@ router.post('/create-checkout', requireAuth, async (req: Request, res: Response)
 
 // POST /api/stripe/create-portal
 router.post('/create-portal', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  const [user] = await query<{ stripe_customer_id: string }>(
-    'SELECT stripe_customer_id FROM users WHERE id = $1',
-    [req.user!.id]
-  );
+  try {
+    const stripe = getStripe();
+    const [user] = await query<{ stripe_customer_id: string }>(
+      'SELECT stripe_customer_id FROM users WHERE id = $1',
+      [req.user!.id]
+    );
 
-  if (!user?.stripe_customer_id) {
-    res.status(404).json({ message: 'No billing account found' });
-    return;
+    if (!user?.stripe_customer_id) {
+      res.status(404).json({ message: 'No billing account found' });
+      return;
+    }
+
+    const session = await stripe.billingPortal.sessions.create({
+      customer: user.stripe_customer_id,
+      return_url: `${API_BASE}/stripe/cancelled`,
+    });
+    res.json({ url: session.url });
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
   }
-
-  const session = await stripe.billingPortal.sessions.create({
-    customer: user.stripe_customer_id,
-    return_url: `${process.env.APP_URL}/profile`,
-  });
-
-  res.json({ url: session.url });
 });
 
 // POST /api/stripe/webhook
 router.post('/webhook', async (req: Request, res: Response): Promise<void> => {
+  const stripe = getStripe();
   const sig = req.headers['stripe-signature'] as string;
   let event: Stripe.Event;
 

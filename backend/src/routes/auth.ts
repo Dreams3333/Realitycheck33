@@ -24,6 +24,7 @@ function sanitizeUser(user: User) {
     tier: user.tier,
     checksUsedToday: user.checks_used_today,
     dailyLimit: user.daily_limit,
+    stripeCustomerId: user.stripe_customer_id ?? null,
     createdAt: user.created_at,
   };
 }

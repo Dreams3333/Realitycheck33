@@ -43,3 +43,14 @@ export const api = {
     request<T>(endpoint, { method: 'PUT', body: JSON.stringify(body) }),
   delete: <T>(endpoint: string) => request<T>(endpoint, { method: 'DELETE' }),
 };
+
+export const stripeApi = {
+  createCheckout: () =>
+    request<{ url: string }>('/stripe/create-checkout', { method: 'POST', body: '{}' }),
+  createPortal: () =>
+    request<{ url: string }>('/stripe/create-portal', { method: 'POST', body: '{}' }),
+};
+
+export const authApi = {
+  me: () => request<import('@/constants/types').User>('/auth/me'),
+};
