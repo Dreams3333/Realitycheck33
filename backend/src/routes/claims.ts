@@ -139,7 +139,8 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
 
     res.status(201).json({ id: claim.id, status: 'processed' });
   } catch (err) {
-    console.error('Failed to generate perspectives', err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error('Failed to generate perspectives:', errMsg, err);
     await query("UPDATE claims SET status = 'failed' WHERE id = $1", [claim.id]);
     res.status(202).json({ id: claim.id, status: 'failed', message: 'Perspective generation failed' });
   }

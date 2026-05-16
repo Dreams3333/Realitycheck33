@@ -81,13 +81,25 @@ ONLY return the JSON array, nothing else.`;
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected response type from Claude');
 
-  const raw = JSON.parse(content.text) as Array<{
+  // Strip markdown code fences if present
+  const jsonText = content.text
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/, '')
+    .trim();
+
+  let raw: Array<{
     type: GeneratedPerspective['type'];
     label: string;
     summary: string;
     analysis: string;
     sources: Source[];
   }>;
+  try {
+    raw = JSON.parse(jsonText);
+  } catch {
+    console.error('Claude JSON parse failed. Raw response:', content.text.slice(0, 500));
+    throw new Error('Claude returned non-JSON response');
+  }
 
   return raw.map((p) => ({
     ...p,
