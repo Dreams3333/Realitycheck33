@@ -14,13 +14,11 @@ dotenv.config();
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
-// Stripe webhook must receive raw body
+// Stripe webhook needs raw body
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
-
 app.use(express.json({ limit: '1mb' }));
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] }));
 
-// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -30,55 +28,44 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Health check
+// Run migrations once per cold start before first request
+let migrated = false;
+app.use(async (_req, _res, next) => {
+  if (!migrated && process.env.DATABASE_URL) {
+    try {
+      await runMigrations();
+      migrated = true;
+    } catch (err) {
+      console.error('Migration error (non-fatal):', err);
+    }
+  }
+  next();
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Routes
 app.use('/api/auth', authRouter);
 app.use('/api/claims', claimsRouter);
 app.use('/api/stripe', stripeRouter);
 app.use('/api/admin', adminRouter);
 
-// Daily reset cron (simple internal cron — use Railway cron job for production)
-function scheduleMidnightReset() {
-  const now = new Date();
-  const midnight = new Date(now);
-  midnight.setHours(24, 0, 0, 0);
-  const msUntilMidnight = midnight.getTime() - now.getTime();
-
-  setTimeout(async () => {
-    try {
-      const { pool } = await import('./db/index.js');
-      await pool.query('SELECT reset_daily_checks()');
-      console.log('Daily check counts reset');
-    } catch (err) {
-      console.error('Failed to reset daily checks', err);
-    }
-    scheduleMidnightReset();
-  }, msUntilMidnight);
-}
-
-// 404 handler
 app.use((_req, res) => {
   res.status(404).json({ message: 'Route not found' });
 });
 
-// Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
   res.status(500).json({ message: 'Internal server error' });
 });
 
-runMigrations()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`Reality Check API running on port ${PORT}`);
-      scheduleMidnightReset();
-    });
-  })
-  .catch((err) => {
-    console.error('Failed to run migrations:', err);
-    process.exit(1);
+// Local dev: listen normally
+if (!process.env.VERCEL) {
+  const PORT_NUM = parseInt(process.env.PORT || '3000', 10);
+  app.listen(PORT_NUM, () => {
+    console.log(`Reality Check API running on port ${PORT_NUM}`);
   });
+}
+
+export default app;
