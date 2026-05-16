@@ -81,11 +81,14 @@ ONLY return the JSON array, nothing else.`;
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected response type from Claude');
 
-  // Strip markdown code fences if present
-  const jsonText = content.text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```\s*$/, '')
-    .trim();
+  // Extract JSON array — handles code fences and any preamble text
+  const text = content.text;
+  const start = text.indexOf('[');
+  const end = text.lastIndexOf(']');
+  if (start === -1 || end === -1) {
+    console.error('Claude no JSON array found. Raw response:', text.slice(0, 500));
+    throw new Error('Claude returned no JSON array');
+  }
 
   let raw: Array<{
     type: GeneratedPerspective['type'];
@@ -95,10 +98,10 @@ ONLY return the JSON array, nothing else.`;
     sources: Source[];
   }>;
   try {
-    raw = JSON.parse(jsonText);
+    raw = JSON.parse(text.slice(start, end + 1));
   } catch {
-    console.error('Claude JSON parse failed. Raw response:', content.text.slice(0, 500));
-    throw new Error('Claude returned non-JSON response');
+    console.error('Claude JSON parse failed. Raw response:', text.slice(start, start + 500));
+    throw new Error('Claude returned malformed JSON');
   }
 
   return raw.map((p) => ({
