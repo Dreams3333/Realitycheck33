@@ -112,40 +112,37 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
     [user.id]
   );
 
-  // Create claim as 'processing'
+  // Create claim
   const [claim] = await query<Claim>(
     'INSERT INTO claims (text, category, submitted_by, status) VALUES ($1, $2, $3, $4) RETURNING *',
     [text.trim(), category, user.id, 'processing']
   );
 
-  res.status(202).json({ id: claim.id, status: 'processing' });
+  // Generate perspectives synchronously (required for Vercel serverless — no background jobs)
+  try {
+    const [perspectives, heatScore] = await Promise.all([
+      generatePerspectives(text, category, user.tier === 'premium'),
+      calculateHeatScore(text),
+    ]);
 
-  // Generate perspectives asynchronously
-  setImmediate(async () => {
-    try {
-      const [perspectives, heatScore] = await Promise.all([
-        generatePerspectives(text, category, user.tier === 'premium'),
-        calculateHeatScore(text),
-      ]);
+    await query('UPDATE claims SET heat_score = $1, status = $2, updated_at = NOW() WHERE id = $3', [
+      heatScore, 'processed', claim.id,
+    ]);
 
-      await query('UPDATE claims SET heat_score = $1, status = $2, updated_at = NOW() WHERE id = $3', [
-        heatScore,
-        'processed',
-        claim.id,
-      ]);
-
-      for (const p of perspectives) {
-        await query(
-          `INSERT INTO perspectives (claim_id, type, label, summary, analysis, sources, is_premium_only)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-          [claim.id, p.type, p.label, p.summary, p.analysis, JSON.stringify(p.sources), p.isPremiumOnly]
-        );
-      }
-    } catch (err) {
-      console.error('Failed to generate perspectives', err);
-      await query("UPDATE claims SET status = 'failed' WHERE id = $1", [claim.id]);
+    for (const p of perspectives) {
+      await query(
+        `INSERT INTO perspectives (claim_id, type, label, summary, analysis, sources, is_premium_only)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [claim.id, p.type, p.label, p.summary, p.analysis, JSON.stringify(p.sources), p.isPremiumOnly]
+      );
     }
-  });
+
+    res.status(201).json({ id: claim.id, status: 'processed' });
+  } catch (err) {
+    console.error('Failed to generate perspectives', err);
+    await query("UPDATE claims SET status = 'failed' WHERE id = $1", [claim.id]);
+    res.status(202).json({ id: claim.id, status: 'failed', message: 'Perspective generation failed' });
+  }
 });
 
 // GET /api/claims/:id/comments

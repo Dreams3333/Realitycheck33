@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { Source } from '../types/index.js';
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const client = process.env.ANTHROPIC_API_KEY
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
 
 export interface GeneratedPerspective {
   type: 'left' | 'right' | 'historical' | 'scientific' | 'contrarian';
@@ -20,11 +22,36 @@ const PERSPECTIVE_PROMPTS = {
   contrarian: 'contrarian or devil\'s advocate view — what is the strongest case against the conventional wisdom? What are people missing?',
 };
 
+function mockPerspectives(claimText: string, isPremium: boolean): GeneratedPerspective[] {
+  const types: Array<GeneratedPerspective['type']> = isPremium
+    ? ['left', 'right', 'historical', 'scientific', 'contrarian']
+    : ['left', 'right', 'historical', 'scientific'];
+
+  const labels: Record<GeneratedPerspective['type'], string> = {
+    left: 'Progressive Perspective',
+    right: 'Conservative Perspective',
+    historical: 'Historical Context',
+    scientific: 'Scientific Consensus',
+    contrarian: 'Contrarian View',
+  };
+
+  return types.map((type) => ({
+    type,
+    label: labels[type],
+    summary: `A ${type} analysis of: "${claimText.slice(0, 60)}..."`,
+    analysis: `This is a placeholder analysis for the ${type} perspective. Add your ANTHROPIC_API_KEY to Vercel environment variables to enable real AI-generated perspectives from Claude.\n\nOnce configured, this section will contain 2-3 paragraphs of substantive, nuanced analysis from the ${type} viewpoint, drawing on relevant data, historical precedent, and expert opinion.\n\nThe analysis will be tailored specifically to the claim submitted and provide genuine insight across the political and analytical spectrum.`,
+    sources: [{ title: 'Add ANTHROPIC_API_KEY to enable real sources', url: 'https://console.anthropic.com', domain: 'anthropic.com' }],
+    isPremiumOnly: type === 'contrarian',
+  }));
+}
+
 export async function generatePerspectives(
   claimText: string,
   category: string,
   isPremium: boolean
 ): Promise<GeneratedPerspective[]> {
+  if (!client) return mockPerspectives(claimText, isPremium);
+
   const perspectiveTypes = isPremium
     ? (['left', 'right', 'historical', 'scientific', 'contrarian'] as const)
     : (['left', 'right', 'historical', 'scientific'] as const);
@@ -72,6 +99,8 @@ Respond with ONLY the JSON array, no other text.`;
 }
 
 export async function calculateHeatScore(claimText: string): Promise<number> {
+  if (!client) return Math.floor(Math.random() * 40) + 40; // mock: 40-80
+
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 10,
