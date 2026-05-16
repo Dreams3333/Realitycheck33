@@ -74,19 +74,24 @@ ONLY return the JSON array, nothing else.`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
+    max_tokens: 2000,
     messages: [{ role: 'user', content: prompt }],
   });
+
+  if (message.stop_reason === 'max_tokens') {
+    console.error('Claude hit max_tokens — response truncated');
+    throw new Error('Claude response truncated by max_tokens');
+  }
 
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected response type from Claude');
 
-  // Extract JSON array — handles code fences and any preamble text
+  // Extract the JSON array — skip any preamble (e.g. "[Note: ...]") by looking
+  // specifically for a [ followed by { which signals the start of an object array.
   const text = content.text;
-  const start = text.indexOf('[');
-  const end = text.lastIndexOf(']');
-  if (start === -1 || end === -1) {
-    console.error('Claude no JSON array found. Raw response:', text.slice(0, 500));
+  const match = text.match(/(\[\s*\{[\s\S]*\}\s*\])/);
+  if (!match) {
+    console.error('Claude no object array found. Raw response:', text.slice(0, 500));
     throw new Error('Claude returned no JSON array');
   }
 
@@ -98,9 +103,9 @@ ONLY return the JSON array, nothing else.`;
     sources: Source[];
   }>;
   try {
-    raw = JSON.parse(text.slice(start, end + 1));
+    raw = JSON.parse(match[1]);
   } catch {
-    console.error('Claude JSON parse failed. Raw response:', text.slice(start, start + 500));
+    console.error('Claude JSON parse failed. Extracted:', match[1].slice(0, 500));
     throw new Error('Claude returned malformed JSON');
   }
 
