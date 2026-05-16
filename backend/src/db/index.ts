@@ -2,14 +2,17 @@ import dotenv from 'dotenv';
 import { Pool } from 'pg';
 dotenv.config();
 
-const isLocal = !process.env.DATABASE_URL || process.env.DATABASE_URL.includes('localhost');
+const rawUrl = process.env.DATABASE_URL ?? '';
+const isLocal = !rawUrl || rawUrl.includes('localhost');
+// pg does not support channel_binding — strip it to avoid connection hangs
+const connectionString = rawUrl.replace(/[?&]channel_binding=[^&]*/g, '').replace(/\?$/, '');
 
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: connectionString || undefined,
   ssl: isLocal ? false : { rejectUnauthorized: false },
   max: process.env.VERCEL ? 1 : 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 8000,
 });
 
 pool.on('error', (err) => console.error('DB pool error', err));

@@ -12,7 +12,6 @@ import { runMigrations } from './db/migrate.js';
 dotenv.config();
 
 const app = express();
-const PORT = parseInt(process.env.PORT || '3000', 10);
 
 // Stripe webhook needs raw body
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }));
@@ -28,32 +27,24 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Fail fast if DATABASE_URL is missing (avoids silent hangs on Vercel)
-app.use('/api', (_req, res, next) => {
-  if (!process.env.DATABASE_URL) {
-    res.status(503).json({ message: 'Database not configured. Set DATABASE_URL on Vercel.' });
-    return;
-  }
-  next();
-});
-
-// Run migrations once per cold start before first request
-let migrated = false;
-let migrationPromise: Promise<void> | null = null;
-app.use(async (_req, _res, next) => {
-  if (!migrated && process.env.DATABASE_URL) {
-    if (!migrationPromise) {
-      migrationPromise = runMigrations()
-        .then(() => { migrated = true; })
-        .catch(err => { console.error('Migration error:', err); });
-    }
-    await migrationPromise;
-  }
-  next();
-});
-
+// Health check — no DB needed, answers immediately
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// Start migration in background on cold start so it's likely done by first request
+const migrationReady: Promise<void> = process.env.DATABASE_URL
+  ? runMigrations().catch(err => console.error('Migration failed:', err))
+  : Promise.resolve();
+
+// Gate all /api routes on DATABASE_URL presence, then await migration
+app.use('/api', async (_req, res, next) => {
+  if (!process.env.DATABASE_URL) {
+    res.status(503).json({ message: 'DATABASE_URL not configured on Vercel.' });
+    return;
+  }
+  await migrationReady;
+  next();
 });
 
 app.use('/api/auth', authRouter);
@@ -70,11 +61,11 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   res.status(500).json({ message: 'Internal server error' });
 });
 
-// Local dev: listen normally
+// Local dev only
 if (!process.env.VERCEL) {
-  const PORT_NUM = parseInt(process.env.PORT || '3000', 10);
-  app.listen(PORT_NUM, () => {
-    console.log(`Reality Check API running on port ${PORT_NUM}`);
+  const PORT = parseInt(process.env.PORT || '3000', 10);
+  migrationReady.then(() => {
+    app.listen(PORT, () => console.log(`Reality Check API running on port ${PORT}`));
   });
 }
 
