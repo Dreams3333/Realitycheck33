@@ -28,16 +28,26 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
+// Fail fast if DATABASE_URL is missing (avoids silent hangs on Vercel)
+app.use('/api', (_req, res, next) => {
+  if (!process.env.DATABASE_URL) {
+    res.status(503).json({ message: 'Database not configured. Set DATABASE_URL on Vercel.' });
+    return;
+  }
+  next();
+});
+
 // Run migrations once per cold start before first request
 let migrated = false;
+let migrationPromise: Promise<void> | null = null;
 app.use(async (_req, _res, next) => {
   if (!migrated && process.env.DATABASE_URL) {
-    try {
-      await runMigrations();
-      migrated = true;
-    } catch (err) {
-      console.error('Migration error (non-fatal):', err);
+    if (!migrationPromise) {
+      migrationPromise = runMigrations()
+        .then(() => { migrated = true; })
+        .catch(err => { console.error('Migration error:', err); });
     }
+    await migrationPromise;
   }
   next();
 });
