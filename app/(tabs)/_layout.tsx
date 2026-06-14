@@ -2,10 +2,15 @@ import { Tabs } from 'expo-router';
 import { Platform, Text, StyleSheet, View } from 'react-native';
 import { Colors } from '@/constants/theme';
 
-const ICONS: Record<string, string> = { index: '◈', submit: '⊕', profile: '◉' };
+const ICONS: Record<string, { active: string; inactive: string }> = {
+  index:   { active: '◈', inactive: '◇' },
+  submit:  { active: '⊕', inactive: '⊕' },
+  profile: { active: '◉', inactive: '○' },
+};
 
-function TabIcon({ name, color }: { name: string; color: string }) {
-  return <Text style={[styles.icon, { color }]}>{ICONS[name]}</Text>;
+function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
+  const icon = ICONS[name]?.[focused ? 'active' : 'inactive'] ?? '·';
+  return <Text style={[styles.icon, { color, fontSize: focused ? 24 : 22 }]}>{icon}</Text>;
 }
 
 export default function TabsLayout() {
@@ -24,24 +29,23 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: 'Feed',
-          tabBarIcon: ({ color }) => <TabIcon name="index" color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="index" focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="submit"
         options={{
           title: 'Check',
-          tabBarIcon: ({ color }) => <TabIcon name="submit" color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="submit" focused={focused} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => <TabIcon name="profile" color={color} />,
+          tabBarIcon: ({ color, focused }) => <TabIcon name="profile" focused={focused} color={color} />,
         }}
       />
-      {/* Hide explore tab — replaced by submit */}
       <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
@@ -49,15 +53,24 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#0F0F0F',
+    backgroundColor: 'transparent',
     borderTopWidth: 1,
-    borderTopColor: Colors.cardBorder,
+    borderTopColor: 'rgba(255,255,255,0.06)',
     height: Platform.OS === 'ios' ? 88 : 64,
     paddingBottom: Platform.OS === 'ios' ? 28 : 8,
     paddingTop: 8,
     elevation: 0,
   },
-  tabBg: { flex: 1, backgroundColor: '#0F0F0F' },
-  tabLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
-  icon: { fontSize: 22 },
+  tabBg: {
+    flex: 1,
+    backgroundColor: '#0C0C0C',
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  icon: {
+    lineHeight: 28,
+  },
 });

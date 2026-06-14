@@ -34,7 +34,7 @@ const SLIDES = [
     icon: '★',
     iconColor: Colors.secondary,
     title: 'Stay Sharp.\nStay Informed.',
-    body: 'Track the week\'s most contested claims, join the community discussion, and go deeper with Premium — unlimited checks, full historical context, saved research.',
+    body: "Track the week's most contested claims, join the community discussion, and go deeper with Premium — unlimited checks, full historical context, saved research.",
     accent: Colors.secondary,
   },
 ];
@@ -78,7 +78,6 @@ export default function OnboardingScreen() {
     <View style={styles.container}>
       <LinearGradient colors={['#0A0A0A', '#0D1117', '#0A0A0A']} style={StyleSheet.absoluteFill} />
 
-      {/* Skip */}
       <TouchableOpacity style={styles.skipBtn} onPress={handleDone}>
         <Text style={styles.skipText}>Skip</Text>
       </TouchableOpacity>
@@ -94,7 +93,12 @@ export default function OnboardingScreen() {
       >
         {SLIDES.map((slide, index) => (
           <View key={index} style={styles.slide}>
-            <View style={[styles.iconWrap, { borderColor: slide.accent, shadowColor: slide.accent }]}>
+            <View style={[styles.iconWrap, { borderColor: `${slide.accent}50`, shadowColor: slide.accent }]}>
+              <LinearGradient
+                colors={[`${slide.accent}20`, `${slide.accent}05`]}
+                style={StyleSheet.absoluteFill}
+                borderRadius={48}
+              />
               <Text style={[styles.icon, { color: slide.iconColor }]}>{slide.icon}</Text>
             </View>
 
@@ -102,7 +106,7 @@ export default function OnboardingScreen() {
             <Text style={styles.body}>{slide.body}</Text>
 
             {index === 2 && (
-              <View style={[styles.premiumNote, { borderColor: Colors.secondary }]}>
+              <View style={[styles.premiumNote, { borderColor: `${Colors.secondary}40`, backgroundColor: `${Colors.secondary}08` }]}>
                 <Text style={styles.premiumNoteText}>
                   ★  Premium users get unlimited checks + deep historical context
                 </Text>
@@ -112,23 +116,21 @@ export default function OnboardingScreen() {
         ))}
       </ScrollView>
 
-      {/* Dots */}
       <View style={styles.dotsRow}>
         {SLIDES.map((slide, i) => {
-          const width_ = dotAnims[i].interpolate({ inputRange: [0, 1], outputRange: [8, 24] });
+          const dotWidth = dotAnims[i].interpolate({ inputRange: [0, 1], outputRange: [8, 28] });
           const bg = dotAnims[i].interpolate({
             inputRange: [0, 1],
             outputRange: [Colors.textMuted, slide.accent],
           });
           return (
             <TouchableOpacity key={i} onPress={() => goTo(i)}>
-              <Animated.View style={[styles.dot, { width: width_, backgroundColor: bg }]} />
+              <Animated.View style={[styles.dot, { width: dotWidth, backgroundColor: bg }]} />
             </TouchableOpacity>
           );
         })}
       </View>
 
-      {/* CTA */}
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.ctaBtn, { backgroundColor: SLIDES[currentIndex].accent }]}
@@ -136,7 +138,7 @@ export default function OnboardingScreen() {
           activeOpacity={0.85}
         >
           <Text style={styles.ctaText}>
-            {currentIndex < SLIDES.length - 1 ? 'Next' : 'Get Started'}
+            {currentIndex < SLIDES.length - 1 ? 'Continue' : 'Get Started'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -146,8 +148,8 @@ export default function OnboardingScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  skipBtn: { position: 'absolute', top: 60, right: Spacing.lg, zIndex: 10 },
-  skipText: { color: Colors.textMuted, fontSize: 14 },
+  skipBtn: { position: 'absolute', top: 60, right: Spacing.lg, zIndex: 10, padding: 8 },
+  skipText: { color: Colors.textMuted, fontSize: 14, fontWeight: '500' },
   slide: {
     width,
     flex: 1,
@@ -155,6 +157,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
     paddingTop: 80,
+    gap: Spacing.lg,
   },
   iconWrap: {
     width: 96,
@@ -163,39 +166,37 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.xl,
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    overflow: 'hidden',
   },
   icon: { fontSize: 40, fontWeight: '900' },
   title: {
-    fontSize: 36,
+    fontSize: 38,
     fontWeight: '900',
     color: Colors.textPrimary,
     textAlign: 'center',
-    lineHeight: 42,
-    letterSpacing: -0.5,
-    marginBottom: Spacing.lg,
+    lineHeight: 44,
+    letterSpacing: -1,
   },
   body: {
     fontSize: 16,
     color: Colors.textSecondary,
     textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 26,
   },
   premiumNote: {
-    marginTop: Spacing.xl,
     borderWidth: 1,
     borderRadius: Radius.md,
     padding: Spacing.md,
-    backgroundColor: Colors.secondaryMuted,
   },
   premiumNoteText: {
     color: Colors.secondary,
     fontSize: 13,
     textAlign: 'center',
     fontWeight: '600',
+    lineHeight: 20,
   },
   dotsRow: {
     flexDirection: 'row',
@@ -205,11 +206,14 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   dot: { height: 8, borderRadius: 4 },
-  footer: { paddingHorizontal: Spacing.xl, paddingBottom: 48 },
+  footer: { paddingHorizontal: Spacing.xl, paddingBottom: 52 },
   ctaBtn: {
-    borderRadius: Radius.md,
-    paddingVertical: 16,
+    borderRadius: Radius.lg,
+    paddingVertical: 18,
     alignItems: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
   },
-  ctaText: { color: '#000', fontSize: 17, fontWeight: '800' },
+  ctaText: { color: '#FFFFFF', fontSize: 17, fontWeight: '800', letterSpacing: 0.2 },
 });

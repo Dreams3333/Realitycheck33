@@ -21,6 +21,12 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other: Colors.textMuted,
 };
 
+function getHeatColor(score: number): string {
+  if (score >= 75) return Colors.heatHigh;
+  if (score >= 50) return Colors.heatMedium;
+  return Colors.heatLow;
+}
+
 export function ClaimCard({ claim }: ClaimCardProps) {
   const scale = useRef(new Animated.Value(1)).current;
 
@@ -38,6 +44,8 @@ export function ClaimCard({ claim }: ClaimCardProps) {
   };
 
   const catColor = CATEGORY_COLORS[claim.category] || Colors.textMuted;
+  const isHot = claim.heatScore >= 70;
+  const accentColor = getHeatColor(claim.heatScore);
 
   return (
     <TouchableOpacity
@@ -46,31 +54,42 @@ export function ClaimCard({ claim }: ClaimCardProps) {
       onPressOut={handlePressOut}
       activeOpacity={1}
     >
-      <Animated.View style={[styles.card, { transform: [{ scale }] }]}>
-        <View style={styles.header}>
-          <View style={[styles.categoryBadge, { borderColor: catColor }]}>
-            <Text style={[styles.categoryText, { color: catColor }]}>{claim.category}</Text>
+      <Animated.View
+        style={[
+          styles.card,
+          isHot && { borderColor: `${accentColor}30`, shadowColor: accentColor, shadowOpacity: 0.15 },
+          { transform: [{ scale }] },
+        ]}
+      >
+        {/* Left accent bar for hot claims */}
+        {isHot && <View style={[styles.hotAccent, { backgroundColor: accentColor }]} />}
+
+        <View style={styles.inner}>
+          <View style={styles.header}>
+            <View style={[styles.categoryBadge, { borderColor: `${catColor}60`, backgroundColor: `${catColor}12` }]}>
+              <Text style={[styles.categoryText, { color: catColor }]}>{claim.category}</Text>
+            </View>
+            <HeatIndicator score={claim.heatScore} />
           </View>
-          <HeatIndicator score={claim.heatScore} />
-        </View>
 
-        <Text style={styles.claimText} numberOfLines={3}>
-          {claim.text}
-        </Text>
-
-        <View style={styles.heatBarRow}>
-          <Text style={styles.heatLabel}>Debate intensity</Text>
-          <HeatBar score={claim.heatScore} />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            {claim.perspectives.length} perspectives
+          <Text style={styles.claimText} numberOfLines={3}>
+            {claim.text}
           </Text>
-          <Text style={styles.separator}>·</Text>
-          <Text style={styles.footerText}>{claim.commentCount} comments</Text>
-          <Text style={styles.separator}>·</Text>
-          <Text style={styles.footerText}>{formatViews(claim.viewCount)} views</Text>
+
+          <View style={styles.heatBarRow}>
+            <Text style={styles.heatLabel}>Debate intensity</Text>
+            <HeatBar score={claim.heatScore} />
+          </View>
+
+          <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              {claim.perspectives.length > 0 ? `${claim.perspectives.length} perspectives` : 'Analyzing...'}
+            </Text>
+            <Text style={styles.separator}>·</Text>
+            <Text style={styles.footerText}>{claim.commentCount} comments</Text>
+            <Text style={styles.separator}>·</Text>
+            <Text style={styles.footerText}>{formatViews(claim.viewCount)} views</Text>
+          </View>
         </View>
       </Animated.View>
     </TouchableOpacity>
@@ -88,8 +107,22 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderWidth: 1,
     borderColor: Colors.cardBorder,
-    padding: Spacing.md,
-    marginBottom: 12,
+    marginBottom: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+    flexDirection: 'row',
+  },
+  hotAccent: {
+    width: 3,
+    alignSelf: 'stretch',
+  },
+  inner: {
+    flex: 1,
+    padding: 20,
     gap: Spacing.sm,
   },
   header: {
@@ -104,16 +137,17 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
   },
   categoryText: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   claimText: {
     color: Colors.textPrimary,
     fontSize: 16,
-    fontWeight: '600',
-    lineHeight: 23,
+    fontWeight: '700',
+    lineHeight: 24,
+    letterSpacing: -0.2,
   },
   heatBarRow: {
     flexDirection: 'row',
@@ -129,6 +163,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: Colors.cardBorder,
   },
   footerText: {
     color: Colors.textMuted,

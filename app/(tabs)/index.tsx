@@ -114,9 +114,10 @@ export default function FeedScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.greeting}>Good {getGreeting()},</Text>
+          <Text style={styles.greeting}>{getGreeting()}</Text>
           <Text style={styles.name}>{user?.displayName?.split(' ')[0] ?? 'Reader'}</Text>
         </View>
         {user?.tier === 'premium' && (
@@ -126,6 +127,9 @@ export default function FeedScreen() {
         )}
       </View>
 
+      <View style={styles.divider} />
+
+      {/* Section title + heat legend */}
       <View style={styles.sectionRow}>
         <Text style={styles.sectionTitle}>Trending Claims</Text>
         <View style={styles.legendRow}>
@@ -136,6 +140,7 @@ export default function FeedScreen() {
         </View>
       </View>
 
+      {/* Category filter */}
       <FlatList
         data={CATEGORIES}
         horizontal
@@ -183,9 +188,9 @@ export default function FeedScreen() {
 
 function getGreeting() {
   const h = new Date().getHours();
-  if (h < 12) return 'morning';
-  if (h < 17) return 'afternoon';
-  return 'evening';
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 const styles = StyleSheet.create({
@@ -196,35 +201,41 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
+    paddingBottom: Spacing.md,
   },
-  greeting: { color: Colors.textMuted, fontSize: 13 },
-  name: { color: Colors.textPrimary, fontSize: 22, fontWeight: '800' },
+  greeting: { color: Colors.textMuted, fontSize: 12, fontWeight: '500', letterSpacing: 0.3, marginBottom: 2 },
+  name: { color: Colors.textPrimary, fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
   premiumBadge: {
     backgroundColor: Colors.secondaryMuted,
     borderWidth: 1,
-    borderColor: Colors.secondary,
+    borderColor: `${Colors.secondary}60`,
     borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  premiumText: { color: Colors.secondary, fontSize: 10, fontWeight: '700', letterSpacing: 0.5 },
+  premiumText: { color: Colors.secondary, fontSize: 10, fontWeight: '700', letterSpacing: 0.8 },
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginHorizontal: Spacing.lg,
+  },
   sectionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
-  sectionTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '800' },
+  sectionTitle: { color: Colors.textPrimary, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 7, height: 7, borderRadius: 4 },
+  legendDot: { width: 6, height: 6, borderRadius: 3 },
   legendText: { color: Colors.textMuted, fontSize: 11 },
-  catRow: { maxHeight: 48, marginTop: Spacing.sm },
-  catList: { paddingHorizontal: Spacing.lg, gap: 8 },
+  catRow: { maxHeight: 52, marginBottom: 4 },
+  catList: { paddingHorizontal: Spacing.lg, gap: 8, alignItems: 'center' },
   catBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: Colors.surface,
     borderWidth: 1,

@@ -19,14 +19,11 @@ export default function SplashScreen() {
   const glitchOpacity2 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    // Fade in logo
     Animated.parallel([
       Animated.timing(mainOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
       Animated.spring(logoScale, { toValue: 1, friction: 8, useNativeDriver: true }),
     ]).start(() => {
-      // Run glitch bursts
       runGlitch(() => {
-        // Fade in subtitle after glitch
         Animated.timing(subtitleOpacity, { toValue: 1, duration: 500, useNativeDriver: true }).start();
       });
     });
@@ -57,10 +54,8 @@ export default function SplashScreen() {
     ]).start(onDone);
   }
 
-  // Navigate once loading is done
   useEffect(() => {
     if (isLoading) return;
-
     const timer = setTimeout(() => {
       if (isAuthenticated) {
         router.replace('/(tabs)');
@@ -70,7 +65,6 @@ export default function SplashScreen() {
         router.replace('/(auth)/login');
       }
     }, 2800);
-
     return () => clearTimeout(timer);
   }, [isLoading, isAuthenticated, hasCompletedOnboarding]);
 
@@ -82,29 +76,19 @@ export default function SplashScreen() {
       />
 
       <Animated.View style={[styles.logoWrap, { opacity: mainOpacity, transform: [{ scale: logoScale }] }]}>
-        {/* Glitch layer 1 */}
+        {/* Glitch layers — absolutely positioned over the main logo */}
         <Animated.Text
-          style={[
-            styles.logo,
-            styles.glitchBlue,
-            { transform: [{ translateX: glitchX }], opacity: glitchOpacity },
-          ]}
+          style={[styles.glitchLayer, styles.glitchBlue, { transform: [{ translateX: glitchX }], opacity: glitchOpacity }]}
+        >
+          REALITY{'\n'}CHECK
+        </Animated.Text>
+        <Animated.Text
+          style={[styles.glitchLayer, styles.glitchGold, { transform: [{ translateX: glitchX2 }], opacity: glitchOpacity2 }]}
         >
           REALITY{'\n'}CHECK
         </Animated.Text>
 
-        {/* Glitch layer 2 */}
-        <Animated.Text
-          style={[
-            styles.logo,
-            styles.glitchGold,
-            { transform: [{ translateX: glitchX2 }], opacity: glitchOpacity2 },
-          ]}
-        >
-          REALITY{'\n'}CHECK
-        </Animated.Text>
-
-        {/* Main logo */}
+        {/* Main logo — in normal flow so the container has height */}
         <Text style={styles.logo}>
           REALITY{'\n'}
           <Text style={styles.logoAccent}>CHECK</Text>
@@ -116,7 +100,6 @@ export default function SplashScreen() {
         <View style={styles.line} />
       </Animated.View>
 
-      {/* Decorative grid */}
       <View style={styles.gridOverlay} pointerEvents="none">
         {Array.from({ length: 6 }).map((_, i) => (
           <View key={i} style={[styles.gridLine, { left: (width / 6) * i }]} />
@@ -135,26 +118,29 @@ const styles = StyleSheet.create({
   },
   logoWrap: {
     alignItems: 'center',
-    position: 'relative',
   },
   logo: {
-    fontSize: 52,
+    fontSize: 56,
     fontWeight: '900',
     color: Colors.textPrimary,
     textAlign: 'center',
-    letterSpacing: -1,
-    lineHeight: 56,
-    position: 'absolute',
+    letterSpacing: -2,
+    lineHeight: 62,
   },
   logoAccent: { color: Colors.primary },
-  glitchBlue: {
-    color: Colors.primary,
+  glitchLayer: {
+    fontSize: 56,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: -2,
+    lineHeight: 62,
     position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
-  glitchGold: {
-    color: Colors.secondary,
-    position: 'absolute',
-  },
+  glitchBlue: { color: Colors.primary },
+  glitchGold: { color: Colors.secondary },
   subtitleWrap: {
     position: 'absolute',
     bottom: 120,
@@ -163,19 +149,17 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     color: Colors.textSecondary,
-    fontSize: 16,
-    letterSpacing: 2,
+    fontSize: 13,
+    letterSpacing: 3,
     textTransform: 'uppercase',
   },
   line: {
-    width: 40,
+    width: 32,
     height: 2,
     backgroundColor: Colors.primary,
     borderRadius: 1,
   },
-  gridOverlay: {
-    ...StyleSheet.absoluteFillObject,
-  },
+  gridOverlay: { ...StyleSheet.absoluteFillObject },
   gridLine: {
     position: 'absolute',
     top: 0,
