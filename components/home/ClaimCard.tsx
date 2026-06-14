@@ -2,7 +2,7 @@ import React, { useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Colors, Radius, Spacing } from '@/constants/theme';
+import { Colors, Radius, Spacing, Glass } from '@/constants/theme';
 import { Claim } from '@/constants/types';
 import { HeatIndicator, HeatBar } from './HeatIndicator';
 
@@ -57,16 +57,23 @@ export function ClaimCard({ claim }: ClaimCardProps) {
       <Animated.View
         style={[
           styles.card,
-          isHot && { borderColor: `${accentColor}30`, shadowColor: accentColor, shadowOpacity: 0.15 },
+          isHot && {
+            borderColor: `${accentColor}25`,
+            shadowColor: accentColor,
+            shadowOpacity: 0.12,
+          },
           { transform: [{ scale }] },
         ]}
       >
+        {/* Glass edge highlight (iOS 27 Liquid Glass top-edge effect) */}
+        <View style={styles.glassEdge} />
+
         {/* Left accent bar for hot claims */}
         {isHot && <View style={[styles.hotAccent, { backgroundColor: accentColor }]} />}
 
         <View style={styles.inner}>
           <View style={styles.header}>
-            <View style={[styles.categoryBadge, { borderColor: `${catColor}60`, backgroundColor: `${catColor}12` }]}>
+            <View style={[styles.categoryBadge, { borderColor: `${catColor}50`, backgroundColor: `${catColor}10` }]}>
               <Text style={[styles.categoryText, { color: catColor }]}>{claim.category}</Text>
             </View>
             <HeatIndicator score={claim.heatScore} />
@@ -103,18 +110,25 @@ function formatViews(n: number): string {
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.surface,
+    ...Glass.card,
     borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
     marginBottom: 16,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
     flexDirection: 'row',
+  },
+  glassEdge: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    zIndex: 1,
   },
   hotAccent: {
     width: 3,
@@ -165,14 +179,8 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingTop: 4,
     borderTopWidth: 1,
-    borderTopColor: Colors.cardBorder,
+    borderTopColor: 'rgba(255,255,255,0.05)',
   },
-  footerText: {
-    color: Colors.textMuted,
-    fontSize: 12,
-  },
-  separator: {
-    color: Colors.textMuted,
-    fontSize: 12,
-  },
+  footerText: { color: Colors.textMuted, fontSize: 12 },
+  separator: { color: Colors.textMuted, fontSize: 12 },
 });

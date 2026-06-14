@@ -1,5 +1,6 @@
 import { Tabs } from 'expo-router';
-import { Platform, Text, StyleSheet, View } from 'react-native';
+import { Platform, Text, StyleSheet } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { Colors } from '@/constants/theme';
 
 const ICONS: Record<string, { active: string; inactive: string }> = {
@@ -10,7 +11,17 @@ const ICONS: Record<string, { active: string; inactive: string }> = {
 
 function TabIcon({ name, focused, color }: { name: string; focused: boolean; color: string }) {
   const icon = ICONS[name]?.[focused ? 'active' : 'inactive'] ?? '·';
-  return <Text style={[styles.icon, { color, fontSize: focused ? 24 : 22 }]}>{icon}</Text>;
+  return <Text style={[styles.icon, { color, fontSize: focused ? 24 : 21 }]}>{icon}</Text>;
+}
+
+function GlassTabBar() {
+  return (
+    <BlurView
+      intensity={Platform.OS === 'ios' ? 80 : 60}
+      tint="dark"
+      style={[StyleSheet.absoluteFill, styles.blurBase]}
+    />
+  );
 }
 
 export default function TabsLayout() {
@@ -22,7 +33,7 @@ export default function TabsLayout() {
         tabBarActiveTintColor: Colors.primary,
         tabBarInactiveTintColor: Colors.textMuted,
         tabBarLabelStyle: styles.tabLabel,
-        tabBarBackground: () => <View style={styles.tabBg} />,
+        tabBarBackground: GlassTabBar,
       }}
     >
       <Tabs.Screen
@@ -54,16 +65,16 @@ export default function TabsLayout() {
 const styles = StyleSheet.create({
   tabBar: {
     backgroundColor: 'transparent',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.10)',
     height: Platform.OS === 'ios' ? 88 : 64,
     paddingBottom: Platform.OS === 'ios' ? 28 : 8,
     paddingTop: 8,
     elevation: 0,
   },
-  tabBg: {
-    flex: 1,
-    backgroundColor: '#0C0C0C',
+  blurBase: {
+    borderTopWidth: 0.5,
+    borderTopColor: 'rgba(255,255,255,0.10)',
   },
   tabLabel: {
     fontSize: 11,
