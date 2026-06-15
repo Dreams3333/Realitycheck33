@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   RefreshControl,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -108,10 +109,15 @@ export default function FeedScreen() {
     fetchClaims();
   };
 
-  const filteredClaims =
-    selectedCategory === 'All'
-      ? claims
-      : claims.filter((c) => c.category === selectedCategory);
+  const filteredClaims = useMemo(
+    () => selectedCategory === 'All' ? claims : claims.filter((c) => c.category === selectedCategory),
+    [claims, selectedCategory]
+  );
+
+  const renderClaim = useCallback(
+    ({ item }: { item: Claim }) => <ClaimCard claim={item} />,
+    []
+  );
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -166,8 +172,12 @@ export default function FeedScreen() {
           data={filteredClaims}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
-          renderItem={({ item }) => <ClaimCard claim={item} />}
+          renderItem={renderClaim}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={Platform.OS === 'android'}
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          initialNumToRender={6}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
           }

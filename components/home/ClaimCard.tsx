@@ -21,7 +21,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   Other: Colors.textMuted,
 };
 
-export function ClaimCard({ claim }: ClaimCardProps) {
+export const ClaimCard = React.memo(function ClaimCard({ claim }: ClaimCardProps) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const handlePressIn = () => {
@@ -75,7 +75,7 @@ export function ClaimCard({ claim }: ClaimCardProps) {
       </Animated.View>
     </TouchableOpacity>
   );
-}
+});
 
 function formatViews(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
@@ -139,3 +139,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 });
+
