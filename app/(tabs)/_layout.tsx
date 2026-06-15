@@ -49,7 +49,7 @@ export default function TabsLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: '#0F0F0F',
+    backgroundColor: '#0C0A14',
     borderTopWidth: 1,
     borderTopColor: Colors.cardBorder,
     height: Platform.OS === 'ios' ? 88 : 64,
@@ -57,7 +57,7 @@ const styles = StyleSheet.create({
     paddingTop: 8,
     elevation: 0,
   },
-  tabBg: { flex: 1, backgroundColor: '#0F0F0F' },
+  tabBg: { flex: 1, backgroundColor: '#0C0A14' },
   tabLabel: { fontSize: 11, fontWeight: '600', letterSpacing: 0.3 },
   icon: { fontSize: 22 },
 });

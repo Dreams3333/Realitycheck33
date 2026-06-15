@@ -1,8 +1,8 @@
 export const Colors = {
-  background: '#0A0A0A',
-  surface: '#141414',
-  surfaceElevated: '#1C1C1C',
-  cardBorder: '#1E1E1E',
+  background: '#0D0A14',
+  surface: '#141120',
+  surfaceElevated: '#1C1828',
+  cardBorder: '#1E1A2A',
   primary: '#00A8FF',
   primaryMuted: 'rgba(0, 168, 255, 0.10)',
   primaryGlow: 'rgba(0, 168, 255, 0.25)',

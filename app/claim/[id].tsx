@@ -125,7 +125,7 @@ export default function ClaimDetailScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={['#0D0D14', '#0A0A0A']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#100D1A', '#0D0A14']} style={StyleSheet.absoluteFill} />
 
       {/* Top bar */}
       <View style={styles.topBar}>

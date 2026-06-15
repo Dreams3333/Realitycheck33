@@ -49,7 +49,7 @@ export default function RegisterScreen() {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-      <LinearGradient colors={['#0A0A0A', '#0D1117', '#0A0A0A']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#0D0A14', '#0D0F1E', '#0D0A14']} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.wordmark}>REALITY CHECK</Text>

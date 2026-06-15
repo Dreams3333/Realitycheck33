@@ -101,7 +101,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      <LinearGradient colors={['#0D0D14', '#0A0A0A']} style={StyleSheet.absoluteFill} />
+      <LinearGradient colors={['#100D1A', '#0D0A14']} style={StyleSheet.absoluteFill} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
         {/* Avatar + name */}
@@ -166,7 +166,7 @@ export default function ProfileScreen() {
         {!isPremium && (
           <TouchableOpacity style={styles.upgradeCard} onPress={handleUpgrade} activeOpacity={0.85}>
             <LinearGradient
-              colors={['#1A1500', '#0A0A0A']}
+              colors={['#1A1500', '#0D0A14']}
               style={StyleSheet.absoluteFill}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}

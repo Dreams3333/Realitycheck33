@@ -78,7 +78,7 @@ export default function SubmitScreen() {
     >
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <LinearGradient
-          colors={['#0D0D14', '#0A0A0A']}
+          colors={['#100D1A', '#0D0A14']}
           style={StyleSheet.absoluteFill}
         />
 
