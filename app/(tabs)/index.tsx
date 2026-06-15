@@ -221,7 +221,7 @@ const styles = StyleSheet.create({
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
   legendText: { color: Colors.textMuted, fontSize: 11 },
-  catRow: { maxHeight: 48, marginTop: Spacing.sm },
+  catRow: { maxHeight: 52, marginTop: Spacing.sm },
   catList: { paddingHorizontal: Spacing.lg, gap: 8 },
   catBtn: {
     paddingHorizontal: 14,
