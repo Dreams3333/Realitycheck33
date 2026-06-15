@@ -3,9 +3,10 @@ import { Platform } from 'react-native';
 
 function getBaseUrl(): string {
   if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
-  // Android emulator routes host machine's localhost through 10.0.2.2
-  if (Platform.OS === 'android') return 'http://10.0.2.2:3000/api';
-  return 'http://localhost:3000/api';
+  // Local dev: Android emulator routes through 10.0.2.2, iOS/web through localhost
+  if (__DEV__ && Platform.OS === 'android') return 'http://10.0.2.2:3000/api';
+  if (__DEV__) return 'http://localhost:3000/api';
+  return 'https://realitycheck33-check-api.onrender.com/api';
 }
 
 const BASE_URL = getBaseUrl();
