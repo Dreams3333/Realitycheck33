@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { api } from '@/services/api';
 import { useStore } from '@/store/useStore';
 import { Claim } from '@/constants/types';
@@ -145,7 +146,7 @@ export default function FeedScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.catBtn, selectedCategory === item && styles.catBtnActive]}
-            onPress={() => setSelectedCategory(item)}
+            onPress={() => { Haptics.selectionAsync(); setSelectedCategory(item); }}
             activeOpacity={0.75}
           >
             <Text style={[styles.catText, selectedCategory === item && styles.catTextActive]}>
@@ -224,7 +225,9 @@ const styles = StyleSheet.create({
   catList: { paddingHorizontal: Spacing.lg, gap: 8 },
   catBtn: {
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 11,
+    minHeight: 44,
+    justifyContent: 'center',
     borderRadius: 20,
     backgroundColor: Colors.surface,
     borderWidth: 1,

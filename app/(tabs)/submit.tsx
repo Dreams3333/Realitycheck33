@@ -11,6 +11,7 @@ import {
   Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { api } from '@/services/api';
@@ -122,7 +123,7 @@ export default function SubmitScreen() {
               <TouchableOpacity
                 key={cat}
                 style={[styles.catChip, selectedCategory === cat && styles.catChipActive]}
-                onPress={() => setSelectedCategory(cat)}
+                onPress={() => { Haptics.selectionAsync(); setSelectedCategory(cat); }}
                 activeOpacity={0.75}
               >
                 <Text style={[styles.catChipText, selectedCategory === cat && styles.catChipTextActive]}>
@@ -234,7 +235,9 @@ const styles = StyleSheet.create({
     borderColor: Colors.cardBorder,
     borderRadius: Radius.full,
     paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingVertical: 11,
+    minHeight: 44,
+    justifyContent: 'center',
     backgroundColor: Colors.surface,
   },
   catChipActive: { borderColor: Colors.primary, backgroundColor: Colors.primaryMuted },

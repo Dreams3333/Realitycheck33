@@ -81,8 +81,16 @@ const styles = StyleSheet.create({
   name: { color: Colors.textPrimary, fontWeight: '600', fontSize: 14 },
   time: { color: Colors.textMuted, fontSize: 12 },
   text: { color: Colors.textSecondary, fontSize: 14, lineHeight: 20 },
-  likeRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
-  likeIcon: { color: Colors.textMuted, fontSize: 14 },
+  likeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingRight: 16,
+    alignSelf: 'flex-start',
+  },
+  likeIcon: { color: Colors.textMuted, fontSize: 16 },
   likeCount: { color: Colors.textMuted, fontSize: 12 },
   liked: { color: Colors.error },
 });

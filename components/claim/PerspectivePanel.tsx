@@ -1,14 +1,15 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Animated,
+  Linking,
   LayoutAnimation,
   Platform,
   UIManager,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { Colors, Radius, Spacing } from '@/constants/theme';
 import { Perspective, PerspectiveType } from '@/constants/types';
 
@@ -39,8 +40,14 @@ export function PerspectivePanel({ perspective, isLocked = false, index }: Persp
 
   const toggle = () => {
     if (isLocked) return;
+    Haptics.selectionAsync();
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded((prev) => !prev);
+  };
+
+  const openSource = (source: { url: string; domain: string }) => {
+    const url = source.url || `https://www.${source.domain}`;
+    Linking.openURL(url).catch(() => {});
   };
 
   return (
@@ -78,13 +85,18 @@ export function PerspectivePanel({ perspective, isLocked = false, index }: Persp
             <View style={styles.sources}>
               <Text style={styles.sourcesHeader}>SOURCES</Text>
               {perspective.sources.map((source, i) => (
-                <View key={i} style={styles.sourceRow}>
+                <TouchableOpacity
+                  key={i}
+                  style={styles.sourceRow}
+                  onPress={() => openSource(source)}
+                  activeOpacity={0.7}
+                >
                   <View style={[styles.sourceDot, { backgroundColor: config.color }]} />
-                  <Text style={styles.sourceText} numberOfLines={1}>
+                  <Text style={[styles.sourceText, styles.sourceTextLink]} numberOfLines={1}>
                     {source.title}
                   </Text>
                   <Text style={styles.sourceDomain}>{source.domain}</Text>
-                </View>
+                </TouchableOpacity>
               ))}
             </View>
           )}
@@ -166,6 +178,7 @@ const styles = StyleSheet.create({
   sourceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sourceDot: { width: 5, height: 5, borderRadius: 3 },
   sourceText: { color: Colors.textSecondary, fontSize: 12, flex: 1 },
+  sourceTextLink: { color: Colors.primary, textDecorationLine: 'underline' },
   sourceDomain: { color: Colors.textMuted, fontSize: 11 },
   lockOverlay: {
     paddingHorizontal: Spacing.md,

@@ -8,8 +8,10 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
+  BackHandler,
   Alert,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '@/services/api';
@@ -85,6 +87,15 @@ export default function DiscussionScreen() {
     load();
   }, [id]);
 
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      router.back();
+      return true;
+    });
+    return () => handler.remove();
+  }, []);
+
   const handleLike = async (commentId: string) => {
     setComments((prev) =>
       prev.map((c) =>
@@ -109,6 +120,7 @@ export default function DiscussionScreen() {
 
   const handleSubmit = async () => {
     if (!text.trim()) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (!user) {
       Alert.alert('Sign in', 'Please sign in to comment.');
       return;
@@ -140,7 +152,7 @@ export default function DiscussionScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
     >
       <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -208,7 +220,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.cardBorder,
   },
-  closeBtn: { width: 32 },
+  closeBtn: { minWidth: 44, minHeight: 44, justifyContent: 'center' },
   closeText: { color: Colors.textMuted, fontSize: 16 },
   title: { color: Colors.textPrimary, fontSize: 16, fontWeight: '700' },
   count: { color: Colors.textMuted, fontSize: 13 },
@@ -252,13 +264,12 @@ const styles = StyleSheet.create({
     maxHeight: 100,
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
   },
   sendBtnDisabled: { backgroundColor: Colors.surfaceElevated },
   sendText: { color: '#000', fontWeight: '900', fontSize: 16 },

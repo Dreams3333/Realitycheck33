@@ -12,12 +12,14 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { authService } from '@/services/auth';
 import { useStore } from '@/store/useStore';
 import { Button } from '@/components/ui/Button';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 
 export default function RegisterScreen() {
+  const insets = useSafeAreaInsets();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -50,7 +52,7 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
       <LinearGradient colors={['#0D0A14', '#0D0F1E', '#0D0A14']} style={StyleSheet.absoluteFill} />
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={[styles.container, { paddingTop: Math.max(80, insets.top + 40) }]} keyboardShouldPersistTaps="handled">
         <View style={styles.header}>
           <Text style={styles.wordmark}>REALITY CHECK</Text>
         </View>
@@ -137,7 +139,6 @@ const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     paddingHorizontal: Spacing.xl,
-    paddingTop: 80,
     paddingBottom: 40,
     justifyContent: 'center',
   },

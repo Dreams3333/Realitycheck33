@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
+  RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
@@ -97,20 +98,32 @@ export default function ClaimDetailScreen() {
   const [loading, setLoading] = useState(true);
 
   const isPremium = user?.tier === 'premium';
+  const [refreshing, setRefreshing] = useState(false);
+  const [usingFallback, setUsingFallback] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const data = await api.get<Claim>(`/claims/${id}`);
-        setClaim(data);
-      } catch {
+  const load = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    try {
+      const data = await api.get<Claim>(`/claims/${id}`);
+      setClaim(data);
+      setUsingFallback(false);
+    } catch {
+      if (!isRefresh) {
         setClaim(MOCK_CLAIM);
-      } finally {
-        setLoading(false);
+        setUsingFallback(true);
       }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    load();
   }, [id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    load(true);
+  };
 
   if (loading) {
     return (
@@ -140,7 +153,19 @@ export default function ClaimDetailScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+      {usingFallback && (
+        <View style={styles.fallbackBanner}>
+          <Text style={styles.fallbackText}>Showing sample data — pull down to retry</Text>
+        </View>
+      )}
+
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 80 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+        }
+      >
         {/* Claim header */}
         <View style={styles.claimHeader}>
           <View style={styles.metaRow}>
@@ -216,7 +241,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },
-  backBtn: { padding: 8 },
+  backBtn: { padding: 12, marginLeft: -4 },
   backText: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
   discussBtn: {
     backgroundColor: Colors.primaryMuted,
@@ -227,7 +252,15 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   discussText: { color: Colors.primary, fontSize: 12, fontWeight: '600' },
-  content: { paddingHorizontal: Spacing.lg, paddingBottom: 100, gap: Spacing.lg },
+  content: { paddingHorizontal: Spacing.lg, gap: Spacing.lg },
+  fallbackBanner: {
+    backgroundColor: 'rgba(255, 140, 0, 0.12)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 140, 0, 0.3)',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 8,
+  },
+  fallbackText: { color: Colors.heatMedium, fontSize: 12, textAlign: 'center' },
   claimHeader: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
