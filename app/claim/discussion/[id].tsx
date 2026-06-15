@@ -4,6 +4,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  RefreshControl,
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
@@ -70,6 +71,7 @@ export default function DiscussionScreen() {
   const { user } = useStore();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -86,6 +88,15 @@ export default function DiscussionScreen() {
     }
     load();
   }, [id]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const data = await api.get<Comment[]>(`/claims/${id}/comments`);
+      setComments(data);
+    } catch {}
+    finally { setRefreshing(false); }
+  };
 
   useEffect(() => {
     if (Platform.OS !== 'android') return;
@@ -177,6 +188,9 @@ export default function DiscussionScreen() {
             contentContainerStyle={styles.list}
             renderItem={({ item }) => <CommentCard comment={item} onLike={handleLike} />}
             showsVerticalScrollIndicator={false}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />
+            }
           />
         )}
 

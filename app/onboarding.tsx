@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import { authService } from '@/services/auth';
 import { Colors, Spacing, Radius } from '@/constants/theme';
 
@@ -45,6 +46,7 @@ export default function OnboardingScreen() {
   const dotAnims = useRef(SLIDES.map((_, i) => new Animated.Value(i === 0 ? 1 : 0))).current;
 
   const goTo = (index: number) => {
+    Haptics.selectionAsync();
     scrollRef.current?.scrollTo({ x: index * width, animated: true });
     setCurrentIndex(index);
     dotAnims.forEach((anim, i) => {
@@ -70,6 +72,7 @@ export default function OnboardingScreen() {
   };
 
   const handleDone = async () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     await authService.setOnboardingComplete();
     router.replace('/(auth)/login');
   };

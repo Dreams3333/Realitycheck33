@@ -5,9 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   RefreshControl,
+  Share,
   TouchableOpacity,
   ActivityIndicator,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -125,6 +127,17 @@ export default function ClaimDetailScreen() {
     load(true);
   };
 
+  const handleShare = async () => {
+    if (!claim) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Share.share({
+        message: `"${claim.text}"\n\nSee all perspectives on Reality Check.`,
+        title: 'Reality Check',
+      });
+    } catch {}
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -145,12 +158,17 @@ export default function ClaimDetailScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          onPress={() => router.push(`/claim/discussion/${claim.id}`)}
-          style={styles.discussBtn}
-        >
-          <Text style={styles.discussText}>{claim.commentCount} comments</Text>
-        </TouchableOpacity>
+        <View style={styles.topBarRight}>
+          <TouchableOpacity onPress={handleShare} style={styles.shareBtn}>
+            <Text style={styles.shareText}>↗ Share</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => router.push(`/claim/discussion/${claim.id}`)}
+            style={styles.discussBtn}
+          >
+            <Text style={styles.discussText}>{claim.commentCount} comments</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {usingFallback && (
@@ -241,8 +259,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm,
   },
+  topBarRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   backBtn: { padding: 12, marginLeft: -4 },
   backText: { color: Colors.primary, fontSize: 15, fontWeight: '600' },
+  shareBtn: { padding: 8 },
+  shareText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '600' },
   discussBtn: {
     backgroundColor: Colors.primaryMuted,
     borderRadius: Radius.full,

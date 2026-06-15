@@ -183,7 +183,13 @@ export default function FeedScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
-              <Text style={styles.emptyText}>No claims in this category yet.</Text>
+              <Text style={styles.emptyIcon}>◈</Text>
+              <Text style={styles.emptyTitle}>Nothing here yet</Text>
+              <Text style={styles.emptyText}>
+                {selectedCategory === 'All'
+                  ? 'No claims yet. Be the first to submit one.'
+                  : `No ${selectedCategory.toLowerCase()} claims yet. Submit the first one.`}
+              </Text>
             </View>
           }
         />
@@ -247,6 +253,8 @@ const styles = StyleSheet.create({
   catText: { color: Colors.textSecondary, fontSize: 13, fontWeight: '500' },
   catTextActive: { color: Colors.primary, fontWeight: '700' },
   listContent: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: 100 },
-  emptyWrap: { paddingTop: 60, alignItems: 'center' },
-  emptyText: { color: Colors.textMuted, fontSize: 15 },
+  emptyWrap: { paddingTop: 60, alignItems: 'center', gap: 10 },
+  emptyIcon: { fontSize: 40, color: Colors.textMuted },
+  emptyTitle: { color: Colors.textSecondary, fontSize: 17, fontWeight: '700' },
+  emptyText: { color: Colors.textMuted, fontSize: 14, textAlign: 'center', paddingHorizontal: Spacing.xl },
 });
