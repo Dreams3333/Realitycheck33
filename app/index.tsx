@@ -135,7 +135,7 @@ const styles = StyleSheet.create({
   },
   logoWrap: {
     alignItems: 'center',
-    position: 'relative',
+    width: width,
   },
   logo: {
     fontSize: 52,
@@ -144,16 +144,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: -1,
     lineHeight: 56,
-    position: 'absolute',
   },
   logoAccent: { color: Colors.primary },
   glitchBlue: {
     color: Colors.primary,
     position: 'absolute',
+    left: 0,
+    right: 0,
   },
   glitchGold: {
     color: Colors.secondary,
     position: 'absolute',
+    left: 0,
+    right: 0,
   },
   subtitleWrap: {
     position: 'absolute',
