@@ -1,0 +1,58 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
+      <stop offset="0"    stop-color="#4a2288"/>
+      <stop offset="0.45" stop-color="#2a1258"/>
+      <stop offset="1"    stop-color="#140a2c"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.47" r="0.5">
+      <stop offset="0"   stop-color="#8a44ff" stop-opacity="0.5"/>
+      <stop offset="0.55" stop-color="#6a2ad0" stop-opacity="0.15"/>
+      <stop offset="1"   stop-color="#6a2ad0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="0.4" stop-color="#ffffff" stop-opacity="0.03"/>
+      <stop offset="0.65" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0"    stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#ffd766"/>
+      <stop offset="0.62" stop-color="#f0a92e"/>
+      <stop offset="1"    stop-color="#c17c14"/>
+    </linearGradient>
+    <linearGradient id="wht" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e7ddff"/>
+    </linearGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="9" stdDeviation="16" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="goldglow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="0" stdDeviation="20" flood-color="#ffb43c" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <rect width="1024" height="1024" fill="url(#glow)"/>
+  <path d="M0,0 H1024 V300 Q512,460 0,300 Z" fill="url(#sheen)"/>
+
+  <!-- centered RC + check group -->
+  <g filter="url(#soft)">
+    <text x="392" y="632" font-family="Liberation Sans, Arial, sans-serif"
+          font-weight="bold" font-size="380" fill="url(#wht)"
+          text-anchor="middle" letter-spacing="-10">RC</text>
+  </g>
+
+  <g filter="url(#goldglow)">
+    <path d="M628,556 L688,620 L806,470"
+          fill="none" stroke="url(#gold)" stroke-width="58"
+          stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M633,551 L688,610 L800,468"
+          fill="none" stroke="#fff6d8" stroke-width="12"
+          stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>
+  </g>
+
+  <rect x="4" y="4" width="1016" height="1016" fill="none"
+        stroke="#ffffff" stroke-opacity="0.05" stroke-width="8"/>
+</svg>
