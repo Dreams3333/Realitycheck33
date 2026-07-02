@@ -61,8 +61,7 @@ app.use((_req, res) => {
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   console.error(err);
-  // TEMP DEBUG: expose error detail to diagnose the 500. Revert after fixing.
-  res.status(500).json({ message: 'Internal server error', error: err.message });
+  res.status(500).json({ message: 'Internal server error' });
 });
 
 // Local dev only
