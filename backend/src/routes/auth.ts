@@ -44,7 +44,7 @@ router.post('/register', async (req: Request, res: Response): Promise<void> => {
     return;
   }
 
-  const passwordHash = await bcrypt.hash(password, 12);
+  const passwordHash = await bcrypt.hash(password, 10);
   const trialEndsAt = startTrial ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) : null;
   const tier = startTrial ? 'premium' : 'free';
 

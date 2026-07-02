@@ -1,7 +1,16 @@
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+
+// A single bad request must never crash the whole server (was causing 502 crash-loops).
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+});
 
 import authRouter from './routes/auth.js';
 import claimsRouter from './routes/claims.js';
