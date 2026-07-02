@@ -12,7 +12,7 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.realitycheck.app",
+      "package": "com.solrae.realitycheck",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#2C1560",
