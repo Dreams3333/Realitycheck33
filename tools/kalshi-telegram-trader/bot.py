@@ -386,6 +386,12 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(summary)
 
 
+async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Today's scorecard: how many of today's graded picks it called right."""
+    summary = await asyncio.to_thread(learning.today_summary)
+    await update.message.reply_text(summary)
+
+
 # ----------------------------------------------------------------------
 # SETTLEMENT POLLER — feeds outcomes back into calibration
 # ----------------------------------------------------------------------
@@ -480,6 +486,7 @@ def main():
     app.add_handler(CommandHandler("start_trading", cmd_start_trading))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("today", cmd_today))
 
     # Poll Kalshi for settled markets so outcomes flow back into calibration.
     app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)

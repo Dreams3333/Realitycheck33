@@ -296,6 +296,44 @@ def _brier(rows, prob_col: str) -> float | None:
     return sum(vals) / len(vals) if vals else None
 
 
+def today_summary() -> str:
+    """Today's scorecard: of the picks that SETTLED today, how many the paper
+    brain (and any real bets) called right, plus the day's PnL. Note a pick
+    settles when its Kalshi market settles, which may be days after it was
+    logged — so this is 'graded today', not 'placed today'. Date is UTC."""
+    today = datetime.datetime.utcnow().date().isoformat()
+    with _LOCK, _conn() as c:
+        t = c.execute(
+            """
+            SELECT
+              COUNT(*) settled,
+              COALESCE(SUM(CASE WHEN paper_bet=1 THEN 1 END),0) pbets,
+              COALESCE(SUM(CASE WHEN paper_bet=1 THEN won END),0) pwins,
+              COALESCE(SUM(CASE WHEN paper_bet=1 THEN paper_pnl END),0.0) ppnl,
+              COALESCE(SUM(CASE WHEN bet=1 THEN 1 END),0) rbets,
+              COALESCE(SUM(CASE WHEN bet=1 THEN won END),0) rwins,
+              COALESCE(SUM(CASE WHEN bet=1 THEN pnl END),0.0) rpnl
+            FROM picks
+            WHERE resolved=1 AND substr(resolved_at,1,10)=?
+            """,
+            (today,),
+        ).fetchone()
+
+    L = [f"📅 Today ({today} UTC)"]
+    L.append(f"Picks graded today: {t['settled']}")
+    if t["pbets"]:
+        wr = 100.0 * t["pwins"] / t["pbets"]
+        L.append(f"🧠 Paper bets: {t['pbets']}  |  right: {t['pwins']}/{t['pbets']} "
+                 f"({wr:.0f}%)  |  PnL ${t['ppnl']:+.2f}")
+    else:
+        L.append("🧠 Paper bets graded today: 0 (watching, no confident edge yet)")
+    if t["rbets"]:
+        rwr = 100.0 * t["rwins"] / t["rbets"]
+        L.append(f"💵 Real bets: {t['rbets']}  |  right: {t['rwins']}/{t['rbets']} "
+                 f"({rwr:.0f}%)  |  PnL ${t['rpnl']:+.2f}")
+    return "\n".join(L)
+
+
 def stats_summary() -> str:
     with _LOCK, _conn() as c:
         t = c.execute(
