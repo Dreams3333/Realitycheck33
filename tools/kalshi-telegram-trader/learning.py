@@ -327,6 +327,30 @@ def open_summary(limit: int = 20) -> str:
     return "\n".join(L)
 
 
+def best_picks_summary(limit: int = 5) -> str:
+    """The bot's top confident open picks — used for the daily digest."""
+    with _LOCK, _conn() as c:
+        rows = c.execute(
+            """
+            SELECT player, ticker, no_price, calibrated_pct, edge, paper_count
+            FROM picks
+            WHERE resolved=0 AND paper_bet=1
+            ORDER BY edge DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+    if not rows:
+        return ("🏆 Best picks of the day\n"
+                "No confident picks yet — still learning. Check /prediction anytime.")
+    L = ["🏆 *Best picks of the day*"]
+    for r in rows:
+        name = (r["player"] or r["ticker"])[:40]
+        L.append(f"• {name}: NO {r['no_price']}¢ → bot {r['calibrated_pct']:.0f}% "
+                 f"(edge +{r['edge']:.1f}¢, paper {r['paper_count']}x)")
+    return "\n".join(L)
+
+
 def today_summary() -> str:
     """Today's scorecard: of the picks that SETTLED today, how many the paper
     brain (and any real bets) called right, plus the day's PnL. Note a pick

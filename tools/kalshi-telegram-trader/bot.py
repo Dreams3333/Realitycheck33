@@ -70,6 +70,13 @@ AUTOPICK_INTERVAL = int(os.environ.get("KALSHI_AUTOPICK_INTERVAL", "600"))
 AUTOPICK_SERIES = os.environ.get("KALSHI_AUTOPICK_SERIES") or None  # keep buckets coherent
 AUTOPICK_MAX = int(os.environ.get("KALSHI_AUTOPICK_MAX", "50"))     # markets per cycle
 
+# Where proactive alerts (live confident picks + daily digest) are sent. Defaults
+# to your user ID, but a bot can't DM you unless you've started a private chat
+# with it — set KALSHI_ALERT_CHAT_ID to a group's chat id to get alerts there.
+ALERT_CHAT_ID = os.environ.get("KALSHI_ALERT_CHAT_ID") or os.environ.get("TELEGRAM_CHAT_ID")
+DIGEST_HOUR = int(os.environ.get("KALSHI_DIGEST_HOUR", "16"))       # UTC hour for daily digest
+MAX_ALERTS_PER_CYCLE = 5   # don't burst-spam if many picks turn confident at once
+
 KALSHI_BASE = "https://api.elections.kalshi.com"
 
 # Where the daily-spend counter and kill-switch flag live so they survive a
@@ -478,6 +485,7 @@ async def autopick(context: ContextTypes.DEFAULT_TYPE):
             client.list_markets, "open", 100, AUTOPICK_SERIES
         )
         logged = 0
+        alerts = 0
         for m in markets:
             if logged >= AUTOPICK_MAX:
                 break
@@ -500,14 +508,42 @@ async def autopick(context: ContextTypes.DEFAULT_TYPE):
                 "calibrated_pct": cal,
                 "edge": round(cal - no_ask, 1),
             }
-            await asyncio.to_thread(
+            paper = await asyncio.to_thread(
                 learning.observe, f"auto-{uuid.uuid4().hex[:8]}", pick, cal
             )
             logged += 1
+
+            # LIVE ALERT: only when the bot made a *confident* paper bet on it.
+            if paper["paper_bet"] and alerts < MAX_ALERTS_PER_CYCLE:
+                await _send_alert(
+                    context.bot,
+                    f"🎯 *New confident pick*\n{pick['player'][:60]}\n"
+                    f"NO {pick['no_price']}¢ → bot {cal:.0f}%  "
+                    f"(edge +{pick['edge']:.1f}¢)\n"
+                    f"🧠 paper bet {paper['count']}x (${paper['cost']:.2f})"
+                )
+                alerts += 1
         if logged:
-            print(f"[autopick] logged {logged} self-picks")
+            print(f"[autopick] logged {logged} self-picks, {alerts} alerts")
     except Exception as e:  # never let the poller kill the bot
         print(f"[autopick] error: {e}")
+
+
+async def _send_alert(bot, text: str):
+    """Send a proactive message to the alert chat; never crash on failure
+    (e.g. the bot can't DM a user who hasn't started a chat with it)."""
+    if not ALERT_CHAT_ID:
+        return
+    try:
+        await bot.send_message(chat_id=ALERT_CHAT_ID, text=text, parse_mode="Markdown")
+    except Exception as e:
+        print(f"[alert] could not send (has the chat started the bot?): {e}")
+
+
+async def daily_digest(context: ContextTypes.DEFAULT_TYPE):
+    """Once a day: send the bot's best confident open picks."""
+    text = await asyncio.to_thread(learning.best_picks_summary)
+    await _send_alert(context.bot, text)
 
 
 # ----------------------------------------------------------------------
@@ -540,6 +576,14 @@ def main():
         app.job_queue.run_repeating(autopick, interval=AUTOPICK_INTERVAL, first=10)
         print(f"[autopick] ON — scanning every {AUTOPICK_INTERVAL}s"
               + (f", series={AUTOPICK_SERIES}" if AUTOPICK_SERIES else ", all series"))
+
+    # Daily "best picks of the day" digest to the alert chat.
+    if ALERT_CHAT_ID:
+        app.job_queue.run_daily(
+            daily_digest,
+            time=datetime.time(hour=DIGEST_HOUR, tzinfo=datetime.timezone.utc),
+        )
+        print(f"[digest] daily best-picks at {DIGEST_HOUR:02d}:00 UTC → chat {ALERT_CHAT_ID}")
 
     # --- Optional: push picks from your OWN scanner too ---
     # If you also have an external model, feed its full output to ingest_scan;

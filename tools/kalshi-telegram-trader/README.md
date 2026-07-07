@@ -29,6 +29,8 @@ Set these env vars (never hardcode secrets — `.env` and `*.pem` are gitignored
 | `KALSHI_AUTOPICK_INTERVAL` | *(optional)* seconds between autonomous market scans (default 600) |
 | `KALSHI_AUTOPICK_SERIES` | *(optional)* restrict autonomous picks to one Kalshi series so calibration buckets stay coherent |
 | `KALSHI_AUTOPICK_MAX` | *(optional)* max markets logged per scan cycle (default 50) |
+| `KALSHI_ALERT_CHAT_ID` | *(optional)* where proactive alerts go (live confident picks + daily digest). Defaults to `TELEGRAM_CHAT_ID`; set to a **group chat id** if the bot can't DM you |
+| `KALSHI_DIGEST_HOUR` | *(optional)* UTC hour for the daily "best picks of the day" digest (default 16) |
 
 ```bash
 python bot.py
@@ -88,6 +90,16 @@ For **every** scanned pick the bot makes its own call, no tap required:
 This is the honest judge of your model: a good model compounds the paper
 bankroll, a bad one bleeds it — regardless of whether you ever bet real money.
 Each ping also shows what the brain did (`🧠 paper: bet 3x ($2.10)` / `skip`).
+
+### Proactive alerts
+
+When autopick makes a **confident** paper pick, the bot sends a live alert to
+`KALSHI_ALERT_CHAT_ID` (🎯 New confident pick …), and once a day at
+`KALSHI_DIGEST_HOUR` it sends a 🏆 "Best picks of the day" digest of its top
+confident open picks. Both stay quiet until the bot has actually learned enough
+to be confident — early on it just watches, so expect silence for a while. A bot
+can't DM a user who hasn't started a private chat with it, so if you only use it
+in a group, set `KALSHI_ALERT_CHAT_ID` to that group's chat id.
 
 ### Watch it with `/stats`
 
