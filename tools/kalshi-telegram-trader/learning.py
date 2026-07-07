@@ -296,6 +296,37 @@ def _brier(rows, prob_col: str) -> float | None:
     return sum(vals) / len(vals) if vals else None
 
 
+def open_summary(limit: int = 20) -> str:
+    """The bot's live predictions: open (unsettled) picks with its calibrated
+    call vs the market price, and whether it put a paper bet behind each one."""
+    with _LOCK, _conn() as c:
+        rows = c.execute(
+            """
+            SELECT ticker, player, model_pct, calibrated_pct, no_price, edge,
+                   paper_bet, paper_count
+            FROM picks WHERE resolved=0
+            ORDER BY paper_bet DESC, edge DESC
+            LIMIT ?
+            """,
+            (limit + 1,),
+        ).fetchall()
+    if not rows:
+        return "🔮 No open predictions right now."
+
+    more = len(rows) > limit
+    rows = rows[:limit]
+    n_bet = sum(1 for r in rows if r["paper_bet"])
+    L = [f"🔮 Open predictions ({len(rows)} shown, {n_bet} with a paper bet)"]
+    for r in rows:
+        name = (r["player"] or r["ticker"])[:22]
+        tag = f"BET {r['paper_count']}x" if r["paper_bet"] else "watch"
+        L.append(f"• {name}: NO {r['no_price']}¢ → bot {r['calibrated_pct']:.0f}%"
+                 f"  (edge {r['edge']:+.1f}¢, {tag})")
+    if more:
+        L.append("…more not shown")
+    return "\n".join(L)
+
+
 def today_summary() -> str:
     """Today's scorecard: of the picks that SETTLED today, how many the paper
     brain (and any real bets) called right, plus the day's PnL. Note a pick

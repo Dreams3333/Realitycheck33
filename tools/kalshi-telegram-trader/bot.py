@@ -392,6 +392,12 @@ async def cmd_today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(summary)
 
 
+async def cmd_picks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """The bot's live predictions on open markets right now."""
+    summary = await asyncio.to_thread(learning.open_summary)
+    await update.message.reply_text(summary)
+
+
 # ----------------------------------------------------------------------
 # SETTLEMENT POLLER — feeds outcomes back into calibration
 # ----------------------------------------------------------------------
@@ -487,6 +493,7 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("today", cmd_today))
+    app.add_handler(CommandHandler("picks", cmd_picks))
 
     # Poll Kalshi for settled markets so outcomes flow back into calibration.
     app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)
