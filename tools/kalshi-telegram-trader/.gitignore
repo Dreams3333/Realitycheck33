@@ -5,5 +5,6 @@ __pycache__/
 # Runtime data — never commit these
 kalshi_state.json
 kalshi_learning.db
+kalshi_demo.db
 *.db
 *.pem

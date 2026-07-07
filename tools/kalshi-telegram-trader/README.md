@@ -96,6 +96,27 @@ Calibration is per-model-bucket, not per-market, so keep the bot pointed at one
 kind of contract (e.g. "1+ HR") for the buckets to mean something; mixing wildly
 different markets muddies the correction.
 
+## See it work before you have a scanner (`demo.py`)
+
+There is no scanner/model in this repo — `model_pct` (the edge) must come from
+*your* model that predicts outcomes better than the market prices them. Until
+that exists, **no real data can accumulate**, and the bot, if launched, just
+sits idle waiting for picks that never arrive.
+
+To watch the learning brain run end-to-end in the meantime:
+
+```bash
+python demo.py                       # 400 synthetic scans
+python demo.py --bias 0 --scans 1000 # a well-calibrated model (bankroll grows)
+python demo.py --bias 20             # a badly overconfident one (bankroll bleeds)
+```
+
+`demo.py` streams **synthetic** picks and outcomes through the real calibration
+and paper-brain code, into a **separate** `kalshi_demo.db`. No Telegram, no
+Kalshi, no secrets, no real money. It proves the plumbing and lets you feel how
+`/stats` evolves — but the numbers say nothing about any real model. Real data
+only comes from wiring a real scanner into `ingest_scan`.
+
 ## ⚠️ Edge convention — read before wiring your scanner
 
 The bot buys the **NO** side. `model_pct` must be your model's fair probability
