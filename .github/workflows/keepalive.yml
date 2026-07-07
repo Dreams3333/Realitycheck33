@@ -17,7 +17,7 @@ jobs:
     steps:
       - name: Ping health endpoint
         run: |
-          URL="${{ vars.HEALTHCHECK_URL || 'https://reality-check-api.onrender.com/health' }}"
+          URL="${{ vars.HEALTHCHECK_URL || 'https://realitycheck33-check-api.onrender.com/health' }}"
           echo "Pinging $URL"
           # Retry so a cold start (first hit wakes it, later hits succeed) still passes.
           for i in 1 2 3 4 5; do
