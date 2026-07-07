@@ -37,7 +37,7 @@ python bot.py
 ## Commands
 
 - `/status` — trading on/off, spent today vs daily cap, current caps
-- `/picks` — the bot's live predictions on open markets right now (its calibrated call vs the market price, and whether it bet)
+- `/prediction` — the bot's live predictions on open markets right now (its calibrated call vs the market price, and whether it bet). `/picks` also works as an alias.
 - `/stats` — all-time track record: hit rate, ROI, and the calibration table
 - `/today` — today's scorecard: how many of today's graded picks it called right, plus the day's PnL (a pick is graded when its Kalshi market settles, which may be after the day it was placed; date is UTC)
 - `/stop` — kill switch, disables trading

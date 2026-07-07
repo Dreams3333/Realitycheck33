@@ -400,7 +400,7 @@ async def cmd_picks(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # The command list shown in Telegram's "/" menu, with descriptions.
 BOT_COMMANDS = [
-    ("picks", "The bot's live predictions on open markets"),
+    ("prediction", "The bot's live predictions on open markets"),
     ("today", "Today's prediction scorecard"),
     ("stats", "All-time track record & calibration"),
     ("status", "Trading on/off, caps, spend today"),
@@ -521,7 +521,8 @@ def main():
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("today", cmd_today))
-    app.add_handler(CommandHandler("picks", cmd_picks))
+    app.add_handler(CommandHandler("prediction", cmd_picks))
+    app.add_handler(CommandHandler("picks", cmd_picks))  # alias, keeps old name working
     app.add_handler(CommandHandler("help", cmd_help))
 
     # Poll Kalshi for settled markets so outcomes flow back into calibration.
