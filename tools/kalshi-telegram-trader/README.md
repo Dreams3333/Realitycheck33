@@ -24,6 +24,11 @@ Set these env vars (never hardcode secrets — `.env` and `*.pem` are gitignored
 | `KALSHI_PAPER_BANKROLL` | *(optional)* starting imaginary bankroll for the paper brain (default 1000) |
 | `KALSHI_KELLY_FRACTION` | *(optional)* fraction of full Kelly the paper brain sizes with (default 0.5 = half-Kelly) |
 | `KALSHI_PAPER_MIN_EDGE` | *(optional)* min calibrated edge (¢) the paper brain requires to bet (default 3) |
+| `KALSHI_CONFIDENCE_Z` | *(optional)* std-errors of confidence a calibrated edge must clear before the paper brain bets (default 1.64 ≈ 95%) |
+| `KALSHI_AUTOPICK` | *(optional)* set to `1` to turn on autonomous background self-picking |
+| `KALSHI_AUTOPICK_INTERVAL` | *(optional)* seconds between autonomous market scans (default 600) |
+| `KALSHI_AUTOPICK_SERIES` | *(optional)* restrict autonomous picks to one Kalshi series so calibration buckets stay coherent |
+| `KALSHI_AUTOPICK_MAX` | *(optional)* max markets logged per scan cycle (default 50) |
 
 ```bash
 python bot.py
@@ -95,6 +100,31 @@ edge grew the paper bankroll from $1,000 to ~$36k over 600 scans.
 Calibration is per-model-bucket, not per-market, so keep the bot pointed at one
 kind of contract (e.g. "1+ HR") for the buckets to mean something; mixing wildly
 different markets muddies the correction.
+
+## Autonomous mode — the bot makes its own picks in the background
+
+Set `KALSHI_AUTOPICK=1` and the bot needs no scanner and no taps. On a timer it:
+
+1. Pulls live open Kalshi markets (optionally one series via `KALSHI_AUTOPICK_SERIES`).
+2. Takes **the market's own NO price as its starting opinion** (`model_pct = no_ask`).
+3. Calibrates that against its accumulated track record and paper-trades it.
+4. The settlement poller resolves it later and feeds the outcome back in.
+
+**How growth turns into accuracy.** Because its opinion *is* the market price,
+before it has data the calibrated edge is ~0 and it simply **watches** — logging
+markets and outcomes without betting. As real results accumulate, its calibrated
+prediction diverges from the raw price wherever the market is systematically off,
+and *that divergence* is the only thing that makes it bet. It literally learns to
+bet from its own growth.
+
+**It won't fool itself.** A bet fires only when the calibrated edge clears
+`KALSHI_CONFIDENCE_Z` standard errors (default ~95% confidence), so noise in a
+thin bucket never triggers a trade. In backtests on a perfectly efficient market
+it stays in watch mode (a handful of bets, bankroll at break-even); on a market
+where NO is genuinely underpriced it finds the edge and compounds. Honest
+caveat: a from-scratch bot betting the market against itself will mostly discover
+the market is efficient — real edges are rare. This tells you the truth about
+that, which is the point.
 
 ## See it work before you have a scanner (`demo.py`)
 

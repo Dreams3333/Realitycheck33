@@ -41,6 +41,11 @@ DB_PATH = os.environ.get(
 # --- Calibration ---
 BUCKET_WIDTH = 10        # percentage-point buckets across the 0-100 model scale
 PRIOR_STRENGTH = 20      # phantom obs anchoring the raw number before data wins
+# How many standard errors of confidence the calibrated edge must clear before
+# the paper brain will bet on it. This is what stops it betting on pure noise:
+# an efficient market never produces a statistically real edge, so it stays in
+# watch mode; only a persistent, sample-backed miscalibration gets bet.
+CONFIDENCE_Z = float(os.environ.get("KALSHI_CONFIDENCE_Z", "1.64"))  # ~95% one-sided
 
 # --- Paper brain ---
 PAPER_BANKROLL_START = float(os.environ.get("KALSHI_PAPER_BANKROLL", "1000"))
@@ -111,9 +116,7 @@ def _bucket_bounds(model_pct: float) -> tuple[int, int]:
     return b * BUCKET_WIDTH, (b + 1) * BUCKET_WIDTH
 
 
-def calibrate(model_pct: float) -> float:
-    """Correct a raw model probability toward the observed hit rate in its
-    bucket, shrunk by PRIOR_STRENGTH. Returns 0-100."""
+def _bucket_stats(model_pct: float) -> tuple[int, int]:
     lo, hi = _bucket_bounds(model_pct)
     with _LOCK, _conn() as c:
         row = c.execute(
@@ -121,9 +124,26 @@ def calibrate(model_pct: float) -> float:
             "WHERE resolved=1 AND model_pct >= ? AND model_pct < ?",
             (lo, hi),
         ).fetchone()
+    return row["n"], row["wins"]
+
+
+def _calibrated_prob(model_pct: float) -> tuple[float, float]:
+    """Returns (point, lower_bound) probabilities in 0-1 for a raw model number.
+      point       = shrinkage-calibrated estimate.
+      lower_bound = point minus CONFIDENCE_Z standard errors — the conservative
+                    estimate the paper brain must bet against, so it can't chase
+                    calibration noise in thin buckets."""
+    n, wins = _bucket_stats(model_pct)
     p_raw = model_pct / 100.0
-    calibrated = (row["wins"] + PRIOR_STRENGTH * p_raw) / (row["n"] + PRIOR_STRENGTH)
-    return round(calibrated * 100.0, 1)
+    point = (wins + PRIOR_STRENGTH * p_raw) / (n + PRIOR_STRENGTH)
+    n_eff = n + PRIOR_STRENGTH
+    se = math.sqrt(max(point * (1 - point), 1e-9) / n_eff)
+    return point, max(0.0, point - CONFIDENCE_Z * se)
+
+
+def calibrate(model_pct: float) -> float:
+    """Shrinkage-calibrated point estimate of P(NO wins), 0-100 (for display)."""
+    return round(_calibrated_prob(model_pct)[0] * 100.0, 1)
 
 
 # ----------------------------------------------------------------------
@@ -163,14 +183,16 @@ def _kelly_fraction(p: float, price_cents: int) -> float:
     return max(0.0, f) * KELLY_FRACTION
 
 
-def _paper_decision(calibrated_pct: float, edge: float, price_cents: int,
+def _paper_decision(lower_prob_pct: float, bettable_edge: float, price_cents: int,
                     equity: float, available: float):
     """Decide the bot's own imaginary bet. Returns (paper_bet, count, cost).
-    Kelly sizes off equity, but the stake is capped at available cash so open
-    positions can't over-commit the bankroll."""
-    if edge < PAPER_MIN_EDGE_CENTS or available <= 0:
+    Both the gate and the Kelly size use the CONSERVATIVE (lower-bound) prob, so
+    a noisy thin bucket never gets bet and sizing never chases an inflated edge.
+    Kelly sizes off equity, capped at available cash so open positions can't
+    over-commit the bankroll."""
+    if bettable_edge < PAPER_MIN_EDGE_CENTS or available <= 0:
         return 0, 0, 0.0
-    f = min(_kelly_fraction(calibrated_pct / 100.0, price_cents), PAPER_MAX_FRACTION)
+    f = min(_kelly_fraction(lower_prob_pct / 100.0, price_cents), PAPER_MAX_FRACTION)
     stake = min(f * equity, available)             # never spend cash you don't have
     count = int((stake * 100) // price_cents)
     if count < 1:
@@ -183,9 +205,14 @@ def observe(pick_id: str, pick: dict, calibrated_pct: float) -> dict:
     Called for every pick the scanner produces, above or below the ping gate.
     Returns the paper decision so the caller can surface it."""
     price = int(pick["no_price"])
-    edge = round(calibrated_pct - price, 1)
+    edge = round(calibrated_pct - price, 1)          # point edge, for display
+    # Confidence-gated edge the paper brain actually bets on.
+    _, lower = _calibrated_prob(pick["model_pct"])
+    lower_pct = lower * 100.0
+    bettable_edge = round(lower_pct - price, 1)
     equity, available = _paper_cash()
-    paper_bet, count, cost = _paper_decision(calibrated_pct, edge, price, equity, available)
+    paper_bet, count, cost = _paper_decision(
+        lower_pct, bettable_edge, price, equity, available)
     with _LOCK, _conn() as c:
         c.execute(
             """
@@ -221,6 +248,15 @@ def unresolved() -> list[sqlite3.Row]:
         return c.execute(
             "SELECT pick_id, ticker FROM picks WHERE resolved=0"
         ).fetchall()
+
+
+def has_open_pick(ticker: str) -> bool:
+    """True if there's already an unresolved pick on this market, so the
+    autonomous poller doesn't log the same open market over and over."""
+    with _LOCK, _conn() as c:
+        return c.execute(
+            "SELECT 1 FROM picks WHERE ticker=? AND resolved=0 LIMIT 1", (ticker,)
+        ).fetchone() is not None
 
 
 def resolve_pick(pick_id: str, won: bool):

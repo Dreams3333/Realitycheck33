@@ -38,6 +38,7 @@ import asyncio
 import datetime
 import uuid
 import threading
+import urllib.parse
 import requests
 
 import learning
@@ -58,6 +59,16 @@ MAX_STAKE_PER_BET = 25.00  # dollars, hard cap per single order
 MAX_DAILY_TOTAL = 100.00   # dollars, hard cap per calendar day
 STAKE_OPTIONS = [5, 10]    # the button amounts
 RESOLVE_INTERVAL_SECONDS = 900  # how often to poll Kalshi for settled markets
+
+# --- Autonomous background self-picking ---
+# When on, the bot scans live Kalshi markets on a timer and forms its OWN picks
+# with no scanner and no human tap. Its opinion is the market price itself, so
+# it starts in pure watch mode (edge ~0 -> no bets) and only begins paper-betting
+# where its accumulated calibration shows the market is genuinely miscalibrated.
+AUTOPICK_ENABLED = os.environ.get("KALSHI_AUTOPICK") == "1"
+AUTOPICK_INTERVAL = int(os.environ.get("KALSHI_AUTOPICK_INTERVAL", "600"))
+AUTOPICK_SERIES = os.environ.get("KALSHI_AUTOPICK_SERIES") or None  # keep buckets coherent
+AUTOPICK_MAX = int(os.environ.get("KALSHI_AUTOPICK_MAX", "50"))     # markets per cycle
 
 KALSHI_BASE = "https://api.elections.kalshi.com"
 
@@ -143,6 +154,19 @@ class KalshiClient:
         )
         r.raise_for_status()
         return r.json()["market"]
+
+    def list_markets(self, status: str = "open", limit: int = 100,
+                     series_ticker: str | None = None) -> list[dict]:
+        """List live markets so the bot can form its own picks. Signs the bare
+        path (Kalshi's auth excludes the query string)."""
+        path = "/trade-api/v2/markets"
+        params = {"status": status, "limit": limit}
+        if series_ticker:
+            params["series_ticker"] = series_ticker
+        url = KALSHI_BASE + path + "?" + urllib.parse.urlencode(params)
+        r = requests.get(url, headers=self._headers("GET", path), timeout=10)
+        r.raise_for_status()
+        return r.json().get("markets", [])
 
     def place_no_limit_order(self, ticker: str, no_price_cents: int, count: int) -> dict:
         """Buy NO contracts at a limit price. count = number of contracts."""
@@ -397,6 +421,54 @@ async def resolve_settled(context: ContextTypes.DEFAULT_TYPE):
 
 
 # ----------------------------------------------------------------------
+# AUTONOMOUS SELF-PICKING — the bot forms its own picks in the background
+# ----------------------------------------------------------------------
+async def autopick(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Scan live Kalshi markets and log the bot's own paper picks — no scanner,
+    no human tap. Its base opinion IS the market price, so calibration is what
+    turns growth into edge: early on edge ~0 (pure watch), and it only starts
+    paper-betting where its accumulated track record says the price is off.
+    """
+    try:
+        client = kalshi_client()
+        markets = await asyncio.to_thread(
+            client.list_markets, "open", 100, AUTOPICK_SERIES
+        )
+        logged = 0
+        for m in markets:
+            if logged >= AUTOPICK_MAX:
+                break
+            ticker = m.get("ticker")
+            no_ask = m.get("no_ask")  # cents to BUY the NO side right now
+            if not ticker or not no_ask or not (1 <= no_ask <= 99):
+                continue  # missing / illiquid market
+            if await asyncio.to_thread(learning.has_open_pick, ticker):
+                continue  # already watching this open market
+
+            # Market-as-model: the price is our starting probability. Calibration
+            # (learned from real outcomes) is the only thing that creates edge.
+            model_pct = int(round(no_ask))
+            cal = await asyncio.to_thread(learning.calibrate, model_pct)
+            pick = {
+                "ticker": ticker,
+                "player": m.get("title") or m.get("subtitle") or ticker,
+                "model_pct": model_pct,
+                "no_price": int(no_ask),
+                "calibrated_pct": cal,
+                "edge": round(cal - no_ask, 1),
+            }
+            await asyncio.to_thread(
+                learning.observe, f"auto-{uuid.uuid4().hex[:8]}", pick, cal
+            )
+            logged += 1
+        if logged:
+            print(f"[autopick] logged {logged} self-picks")
+    except Exception as e:  # never let the poller kill the bot
+        print(f"[autopick] error: {e}")
+
+
+# ----------------------------------------------------------------------
 # WIRE-UP
 # ----------------------------------------------------------------------
 def main():
@@ -412,10 +484,15 @@ def main():
     # Poll Kalshi for settled markets so outcomes flow back into calibration.
     app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)
 
-    # --- Example: how your scanner would push picks ---
-    # Feed your scanner's FULL output to ingest_scan. It paper-trades and logs
-    # every pick (so the brain learns from the whole game) and only pings you
-    # on picks that clear MIN_EDGE_CENTS:
+    # Autonomous background self-picking (set KALSHI_AUTOPICK=1 to turn on).
+    if AUTOPICK_ENABLED:
+        app.job_queue.run_repeating(autopick, interval=AUTOPICK_INTERVAL, first=10)
+        print(f"[autopick] ON — scanning every {AUTOPICK_INTERVAL}s"
+              + (f", series={AUTOPICK_SERIES}" if AUTOPICK_SERIES else ", all series"))
+
+    # --- Optional: push picks from your OWN scanner too ---
+    # If you also have an external model, feed its full output to ingest_scan;
+    # it paper-trades/logs everything and pings you on picks above MIN_EDGE_CENTS:
     #
     #     await ingest_scan(app, os.environ["TELEGRAM_CHAT_ID"], raw_scanner_output)
 
