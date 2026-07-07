@@ -1,0 +1,33 @@
+name: Keep backend awake
+
+# Render's free plan sleeps a web service after ~15 min of inactivity, and the
+# next request eats a ~50s cold start (looks "down", fires alerts). A sleeping
+# service can't wake itself, so this pings /health from outside every ~10 min to
+# keep it warm. Override the URL with a repo variable HEALTHCHECK_URL if the
+# service name/domain differs.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # every 10 minutes (GitHub may delay a few min)
+  workflow_dispatch:          # allow manual runs from the Actions tab
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          URL="${{ vars.HEALTHCHECK_URL || 'https://reality-check-api.onrender.com/health' }}"
+          echo "Pinging $URL"
+          # Retry so a cold start (first hit wakes it, later hits succeed) still passes.
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 60 "$URL" || echo 000)
+            echo "attempt $i: HTTP $code"
+            if [ "$code" = "200" ]; then
+              echo "backend is awake"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::warning::health check never returned 200 — service may be crashing, not just asleep"
+          exit 1

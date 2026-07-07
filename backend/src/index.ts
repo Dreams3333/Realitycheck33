@@ -44,7 +44,7 @@ app.get('/health', (_req, res) => {
 // Gate all /api routes on DATABASE_URL presence
 app.use('/api', (_req, res, next) => {
   if (!process.env.DATABASE_URL) {
-    res.status(503).json({ message: 'DATABASE_URL not configured on Vercel.' });
+    res.status(503).json({ message: 'DATABASE_URL is not configured.' });
     return;
   }
   next();
