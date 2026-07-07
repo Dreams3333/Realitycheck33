@@ -34,10 +34,13 @@ import os
 import time
 import json
 import base64
+import asyncio
 import datetime
 import uuid
 import threading
 import requests
+
+import learning
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -54,6 +57,7 @@ MIN_EDGE_CENTS = 3         # only ping when model_pct - no_price >= 3 cents
 MAX_STAKE_PER_BET = 25.00  # dollars, hard cap per single order
 MAX_DAILY_TOTAL = 100.00   # dollars, hard cap per calendar day
 STAKE_OPTIONS = [5, 10]    # the button amounts
+RESOLVE_INTERVAL_SECONDS = 900  # how often to poll Kalshi for settled markets
 
 KALSHI_BASE = "https://api.elections.kalshi.com"
 
@@ -181,13 +185,19 @@ def filter_picks(picks: list[dict]) -> list[dict]:
     """
     picks: [{"ticker": ..., "player": ..., "model_pct": 88, "no_price": 92}, ...]
     `model_pct` is the model's fair probability for the NO side (0-100).
+
+    Edge is computed on the *calibrated* probability, not the raw model number,
+    so the gate tightens as the track record grows (see learning.py). With no
+    history calibration is a no-op and this behaves like the raw edge filter.
     Keeps only positive-edge picks, sorted best edge first.
     """
     kept = []
     for p in picks:
-        edge = p["model_pct"] - p["no_price"]
+        cal = learning.calibrate(p["model_pct"])
+        edge = cal - p["no_price"]
         if edge >= MIN_EDGE_CENTS:
-            p["edge"] = edge
+            p["calibrated_pct"] = cal
+            p["edge"] = round(edge, 1)
             kept.append(p)
     return sorted(kept, key=lambda p: p["edge"], reverse=True)
 
@@ -227,11 +237,24 @@ async def send_pick(app: Application, chat_id: str, pick: dict):
     pick_id = uuid.uuid4().hex[:8]
     PENDING[pick_id] = pick
 
+    # If the pick came in without going through filter_picks, calibrate now.
+    cal = pick.get("calibrated_pct")
+    if cal is None:
+        cal = learning.calibrate(pick["model_pct"])
+        pick["calibrated_pct"] = cal
+        pick["edge"] = round(cal - pick["no_price"], 1)
+
+    # Log every surfaced pick so it can be resolved and fed back into calibration.
+    learning.log_pick(pick_id, pick, cal)
+
     price = pick["no_price"]
     profit = 100 - price
+    model_line = f"Model {pick['model_pct']}%"
+    if round(cal) != pick["model_pct"]:
+        model_line += f" → cal {cal}%"
     text = (
         f"🎯 *{pick['player']}: 1+ HR?*\n"
-        f"Model: {pick['model_pct']}%  |  NO @ {price}¢  |  "
+        f"{model_line}  |  NO @ {price}¢  |  "
         f"*+{pick['edge']}¢ edge*\n"
         f"Risk {price}¢ to win {profit}¢ per contract"
     )
@@ -290,6 +313,7 @@ async def on_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         order = kalshi_client().place_no_limit_order(
             pick["ticker"], price_cents, count
         )
+        learning.record_bet(pick_id, stake, count, actual_cost)
         await query.edit_message_text(
             f"✅ Order placed: {count}x NO on {pick['player']} @ {price_cents}¢ "
             f"(${actual_cost:.2f})\n"
@@ -340,15 +364,64 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Track record + calibration — the 'is it getting smarter' view."""
+    summary = await asyncio.to_thread(learning.stats_summary)
+    await update.message.reply_text(summary)
+
+
+# ----------------------------------------------------------------------
+# SETTLEMENT POLLER — feeds outcomes back into calibration
+# ----------------------------------------------------------------------
+async def resolve_settled(context: ContextTypes.DEFAULT_TYPE):
+    """
+    Look up every unresolved pick's market on Kalshi; when one has settled,
+    record whether the NO side won. Runs on a repeating JobQueue timer.
+    """
+    try:
+        rows = await asyncio.to_thread(learning.unresolved)
+        if not rows:
+            return
+        # One market can back several picks — query each ticker only once.
+        by_ticker: dict[str, list] = {}
+        for r in rows:
+            by_ticker.setdefault(r["ticker"], []).append(r)
+
+        client = kalshi_client()
+        for ticker, picks in by_ticker.items():
+            try:
+                market = await asyncio.to_thread(client.get_market, ticker)
+            except Exception as e:
+                print(f"[resolve] {ticker}: lookup failed: {e}")
+                continue
+            result = (market.get("result") or "").lower()
+            if result not in ("yes", "no"):
+                continue  # not settled yet
+            won = result == "no"  # this bot buys NO
+            for r in picks:
+                await asyncio.to_thread(
+                    learning.resolve_pick,
+                    r["pick_id"], won, r["no_price"], r["count"], r["bet"],
+                )
+    except Exception as e:  # never let a poller error kill the bot
+        print(f"[resolve] poller error: {e}")
+
+
 # ----------------------------------------------------------------------
 # WIRE-UP
 # ----------------------------------------------------------------------
 def main():
+    learning.init_db()
+
     app = Application.builder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("start_trading", cmd_start_trading))
     app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("stats", cmd_stats))
+
+    # Poll Kalshi for settled markets so outcomes flow back into calibration.
+    app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)
 
     # --- Example: how your scanner would push picks ---
     # In your real bot, call send_pick(...) from your scan loop, e.g.:

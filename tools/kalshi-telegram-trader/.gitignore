@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Runtime data — never commit these
+kalshi_state.json
+kalshi_learning.db
+*.db
+*.pem
