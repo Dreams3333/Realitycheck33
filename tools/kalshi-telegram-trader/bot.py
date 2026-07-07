@@ -46,7 +46,7 @@ import learning
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
 from telegram.ext import (
     Application, CallbackQueryHandler, CommandHandler, ContextTypes,
 )
@@ -398,6 +398,29 @@ async def cmd_picks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(summary)
 
 
+# The command list shown in Telegram's "/" menu, with descriptions.
+BOT_COMMANDS = [
+    ("picks", "The bot's live predictions on open markets"),
+    ("today", "Today's prediction scorecard"),
+    ("stats", "All-time track record & calibration"),
+    ("status", "Trading on/off, caps, spend today"),
+    ("stop", "Kill switch — disable trading"),
+    ("start_trading", "Re-enable trading"),
+    ("help", "What each command does"),
+]
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    lines = ["Commands:"] + [f"/{name} — {desc}" for name, desc in BOT_COMMANDS]
+    await update.message.reply_text("\n".join(lines))
+
+
+async def _on_startup(app: Application):
+    """Register the command list so Telegram's '/' menu is accurate — otherwise
+    the menu is whatever was last set (or empty) and /picks won't show up."""
+    await app.bot.set_my_commands([BotCommand(n, d) for n, d in BOT_COMMANDS])
+
+
 # ----------------------------------------------------------------------
 # SETTLEMENT POLLER — feeds outcomes back into calibration
 # ----------------------------------------------------------------------
@@ -486,7 +509,12 @@ async def autopick(context: ContextTypes.DEFAULT_TYPE):
 def main():
     learning.init_db()
 
-    app = Application.builder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
+    app = (
+        Application.builder()
+        .token(os.environ["TELEGRAM_BOT_TOKEN"])
+        .post_init(_on_startup)   # register the "/" command menu on startup
+        .build()
+    )
     app.add_handler(CallbackQueryHandler(on_button))
     app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(CommandHandler("start_trading", cmd_start_trading))
@@ -494,6 +522,7 @@ def main():
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("today", cmd_today))
     app.add_handler(CommandHandler("picks", cmd_picks))
+    app.add_handler(CommandHandler("help", cmd_help))
 
     # Poll Kalshi for settled markets so outcomes flow back into calibration.
     app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)
