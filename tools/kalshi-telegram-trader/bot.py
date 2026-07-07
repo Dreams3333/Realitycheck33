@@ -123,11 +123,18 @@ class KalshiClient:
 
     def __init__(self):
         self.key_id = os.environ["KALSHI_API_KEY_ID"]
-        key_path = os.environ["KALSHI_PRIVATE_KEY"]
-        with open(key_path, "rb") as f:
-            self.private_key = serialization.load_pem_private_key(
-                f.read(), password=None
-            )
+        # KALSHI_PRIVATE_KEY may be either the PEM contents (paste the whole key
+        # into the env var — best for Render/cloud) or a path to a .pem file
+        # (best for local runs). Detect which and load accordingly.
+        key_value = os.environ["KALSHI_PRIVATE_KEY"]
+        if "PRIVATE KEY" in key_value:
+            key_bytes = key_value.encode()
+        else:
+            with open(key_value, "rb") as f:
+                key_bytes = f.read()
+        self.private_key = serialization.load_pem_private_key(
+            key_bytes, password=None
+        )
 
     def _headers(self, method: str, path: str) -> dict:
         ts = str(int(time.time() * 1000))
