@@ -179,30 +179,6 @@ def kalshi_client() -> KalshiClient:
 
 
 # ----------------------------------------------------------------------
-# EDGE FILTER — see EDGE CONVENTION in the module docstring
-# ----------------------------------------------------------------------
-def filter_picks(picks: list[dict]) -> list[dict]:
-    """
-    picks: [{"ticker": ..., "player": ..., "model_pct": 88, "no_price": 92}, ...]
-    `model_pct` is the model's fair probability for the NO side (0-100).
-
-    Edge is computed on the *calibrated* probability, not the raw model number,
-    so the gate tightens as the track record grows (see learning.py). With no
-    history calibration is a no-op and this behaves like the raw edge filter.
-    Keeps only positive-edge picks, sorted best edge first.
-    """
-    kept = []
-    for p in picks:
-        cal = learning.calibrate(p["model_pct"])
-        edge = cal - p["no_price"]
-        if edge >= MIN_EDGE_CENTS:
-            p["calibrated_pct"] = cal
-            p["edge"] = round(edge, 1)
-            kept.append(p)
-    return sorted(kept, key=lambda p: p["edge"], reverse=True)
-
-
-# ----------------------------------------------------------------------
 # GUARDRAIL CHECKS
 # ----------------------------------------------------------------------
 def _reset_daily_if_new_day():
@@ -233,30 +209,46 @@ def can_spend(amount: float) -> tuple[bool, str]:
 PENDING = {}  # pick_id -> pick dict (buttons carry only a short id)
 
 
-async def send_pick(app: Application, chat_id: str, pick: dict):
-    pick_id = uuid.uuid4().hex[:8]
-    PENDING[pick_id] = pick
+async def ingest_scan(app: Application, chat_id: str, raw_picks: list[dict]):
+    """
+    PRIMARY entry point — call this with your scanner's full output.
 
-    # If the pick came in without going through filter_picks, calibrate now.
-    cal = pick.get("calibrated_pct")
-    if cal is None:
+    Every pick (above OR below the ping gate) is calibrated, logged, and paper-
+    traded by the bot's own brain, so it learns from the whole game. Only picks
+    that clear MIN_EDGE_CENTS get a tap-to-bet ping.
+    """
+    for pick in raw_picks:
+        pick_id = uuid.uuid4().hex[:8]
         cal = learning.calibrate(pick["model_pct"])
         pick["calibrated_pct"] = cal
         pick["edge"] = round(cal - pick["no_price"], 1)
 
-    # Log every surfaced pick so it can be resolved and fed back into calibration.
-    learning.log_pick(pick_id, pick, cal)
+        # Bot's own imaginary bet + log — happens for EVERY scanned pick.
+        paper = learning.observe(pick_id, pick, cal)
 
+        if pick["edge"] >= MIN_EDGE_CENTS:
+            PENDING[pick_id] = pick
+            await _send_pick_message(app, chat_id, pick_id, pick, paper)
+
+
+async def _send_pick_message(app, chat_id, pick_id, pick, paper):
     price = pick["no_price"]
     profit = 100 - price
+    cal = pick["calibrated_pct"]
     model_line = f"Model {pick['model_pct']}%"
     if round(cal) != pick["model_pct"]:
         model_line += f" → cal {cal}%"
+    # Show what the bot's own brain did with this pick.
+    if paper["paper_bet"]:
+        brain = f"🧠 paper: bet {paper['count']}x (${paper['cost']:.2f})"
+    else:
+        brain = "🧠 paper: skip"
     text = (
         f"🎯 *{pick['player']}: 1+ HR?*\n"
         f"{model_line}  |  NO @ {price}¢  |  "
         f"*+{pick['edge']}¢ edge*\n"
-        f"Risk {price}¢ to win {profit}¢ per contract"
+        f"Risk {price}¢ to win {profit}¢ per contract\n"
+        f"{brain}"
     )
     buttons = [
         InlineKeyboardButton(f"Bet ${amt}", callback_data=f"bet|{pick_id}|{amt}")
@@ -399,10 +391,7 @@ async def resolve_settled(context: ContextTypes.DEFAULT_TYPE):
                 continue  # not settled yet
             won = result == "no"  # this bot buys NO
             for r in picks:
-                await asyncio.to_thread(
-                    learning.resolve_pick,
-                    r["pick_id"], won, r["no_price"], r["count"], r["bet"],
-                )
+                await asyncio.to_thread(learning.resolve_pick, r["pick_id"], won)
     except Exception as e:  # never let a poller error kill the bot
         print(f"[resolve] poller error: {e}")
 
@@ -424,11 +413,11 @@ def main():
     app.job_queue.run_repeating(resolve_settled, interval=RESOLVE_INTERVAL_SECONDS, first=60)
 
     # --- Example: how your scanner would push picks ---
-    # In your real bot, call send_pick(...) from your scan loop, e.g.:
+    # Feed your scanner's FULL output to ingest_scan. It paper-trades and logs
+    # every pick (so the brain learns from the whole game) and only pings you
+    # on picks that clear MIN_EDGE_CENTS:
     #
-    # picks = filter_picks(raw_scanner_output)
-    # for p in picks:
-    #     await send_pick(app, os.environ["TELEGRAM_CHAT_ID"], p)
+    #     await ingest_scan(app, os.environ["TELEGRAM_CHAT_ID"], raw_scanner_output)
 
     app.run_polling()
 

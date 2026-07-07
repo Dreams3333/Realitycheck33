@@ -21,6 +21,9 @@ Set these env vars (never hardcode secrets — `.env` and `*.pem` are gitignored
 | `TELEGRAM_CHAT_ID` | your chat id — only this user can trade |
 | `KALSHI_STATE_FILE` | *(optional)* where daily-spend state is saved (default: `kalshi_state.json` beside `bot.py`) |
 | `KALSHI_LEARNING_DB` | *(optional)* where the pick/outcome track record lives (default: `kalshi_learning.db` beside `bot.py`) |
+| `KALSHI_PAPER_BANKROLL` | *(optional)* starting imaginary bankroll for the paper brain (default 1000) |
+| `KALSHI_KELLY_FRACTION` | *(optional)* fraction of full Kelly the paper brain sizes with (default 0.5 = half-Kelly) |
+| `KALSHI_PAPER_MIN_EDGE` | *(optional)* min calibrated edge (¢) the paper brain requires to bet (default 3) |
 
 ```bash
 python bot.py
@@ -45,29 +48,53 @@ reset your daily cap or silently re-enable trading. The spend is reserved under
 a lock *before* the order fires and rolled back if Kalshi rejects it, so rapid
 double-taps can't blow past the cap.
 
-## Gets smarter the more it scans
+## Gets smarter the more it scans — feed it your FULL scan
 
-The bot can't retrain your scanner's model (that lives outside it), but it keeps
-a track record and corrects itself from it — see `learning.py`:
+Call `ingest_scan(app, chat_id, raw_scanner_output)` with **everything** your
+scanner produces, not a pre-filtered list. The bot logs and paper-trades every
+pick — above *and* below the ping gate — and only pings you on the ones that
+clear `MIN_EDGE_CENTS`. Learning from the whole population (including picks it
+would never show you) is what lets it see the real game.
 
-1. **Every surfaced pick is logged** to SQLite (`KALSHI_LEARNING_DB`).
-2. A **settlement poller** (every 15 min) looks up each pick's Kalshi market and
-   records whether the NO side won.
-3. **Calibration** buckets predictions and compares "model said 85%" against the
-   real hit rate, then corrects future probabilities with shrinkage:
-   `calibrated = (wins + K·p_raw) / (n + K)` (K = `PRIOR_STRENGTH`, default 20).
-   With no history it returns the raw number; the more resolved picks in a
-   bucket, the more it trusts what actually happened.
-4. The **edge gate runs on the calibrated probability**, so as data accumulates
-   the bot pings less on edges that never pay off.
+### 1. Track record + calibration
 
-Example: if the 80–90% bucket keeps settling at ~50%, `calibrate(85)` drops from
-85 toward 50 as picks resolve — so those stop clearing the edge gate. Watch it
-happen with `/stats`.
+- **Every scanned pick is logged** to SQLite (`KALSHI_LEARNING_DB`).
+- A **settlement poller** (every 15 min) looks up each pick's Kalshi market and
+  records whether the NO side won.
+- **Calibration** buckets predictions and compares "model said 85%" against the
+  real hit rate, then corrects future probabilities with shrinkage:
+  `calibrated = (wins + K·p_raw) / (n + K)` (K = `PRIOR_STRENGTH`, default 20).
+  No history → returns the raw number; more resolved picks → trusts reality more.
+- The **edge gate runs on the calibrated probability**, so pings dry up on edges
+  that never pay off.
 
-Calibration is per-market-type, so keep the bot pointed at one kind of contract
-(e.g. "1+ HR") for the buckets to mean something; mixing wildly different markets
-muddies the correction.
+### 2. Paper brain — the bot bets its own imaginary money on everything
+
+For **every** scanned pick the bot makes its own call, no tap required:
+
+- Decides bet-or-skip on the *calibrated* edge (`KALSHI_PAPER_MIN_EDGE`).
+- Sizes with **fractional Kelly** (`KALSHI_KELLY_FRACTION`) off a **compounding
+  paper bankroll** (`KALSHI_PAPER_BANKROLL`), capped at 10% of bankroll per bet.
+  Open positions reserve their cash, so it can never over-commit or go negative.
+- When the market settles, it scores the imaginary bet and updates the bankroll.
+
+This is the honest judge of your model: a good model compounds the paper
+bankroll, a bad one bleeds it — regardless of whether you ever bet real money.
+Each ping also shows what the brain did (`🧠 paper: bet 3x ($2.10)` / `skip`).
+
+### Watch it with `/stats`
+
+Shows the paper bankroll vs start, paper win rate and ROI, the model-vs-actual
+calibration table, and a **Brier score for raw vs calibrated** predictions
+(lower = better; 0.25 = coin flip) so you can literally watch accuracy improve.
+
+In backtest: a model overconfident by 12 points gets `calibrate(85)` pulled to
+~72 (true ≈ 73) and Brier drops 0.221 → 0.211; a well-calibrated model with real
+edge grew the paper bankroll from $1,000 to ~$36k over 600 scans.
+
+Calibration is per-model-bucket, not per-market, so keep the bot pointed at one
+kind of contract (e.g. "1+ HR") for the buckets to mean something; mixing wildly
+different markets muddies the correction.
 
 ## ⚠️ Edge convention — read before wiring your scanner
 

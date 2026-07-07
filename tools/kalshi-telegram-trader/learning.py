@@ -1,29 +1,34 @@
 """
-Learning layer — the bot gets smarter the more it scans
-========================================================
-What it does (and, honestly, what it does NOT):
+Learning + paper-trading brain — the bot plays its own game to get sharper
+==========================================================================
+Two jobs live here.
 
-  It CANNOT retrain your scanner's model — that lives outside this bot.
-  It CAN keep a track record and correct itself from it:
+1. TRACK RECORD + CALIBRATION (honest "gets smarter the more it scans")
+   Every scanned pick is logged. A poller records how each one actually
+   settled on Kalshi. Predictions are bucketed and compared to real hit
+   rates, and future probabilities are corrected with shrinkage:
+        calibrated = (wins + K * p_raw) / (n + K)
+   With no data it returns the raw model number; the more resolved picks in
+   a bucket, the more it trusts what actually happened.
 
-    1. Every pick the bot surfaces is logged.
-    2. A background job polls Kalshi for settled markets and records the
-       outcome (did the NO side win?) for each logged pick.
-    3. Calibration: predictions are bucketed and compared against the real
-       hit rate. "Model said 80%" is checked against "actually hit X%", and
-       future probabilities are corrected toward what actually happens.
-    4. The edge gate runs on the *calibrated* probability, so as data
-       accumulates the bot pings less on edges that never pay off.
+2. PAPER BRAIN (the bot bets its own imaginary money on EVERYTHING)
+   For every pick it scans -- not just the ones it pings you about -- the
+   bot makes its own call: would I bet this, and how much? It sizes with
+   fractional Kelly off a compounding *paper* bankroll, records the
+   imaginary bet, and when the market settles it scores itself. This is how
+   it sees the whole game: it learns from picks it would never have shown
+   you, and you can watch its paper bankroll, win rate, and prediction
+   accuracy (Brier score) move over time via /stats.
 
-  The correction uses shrinkage: with little data it trusts the raw model
-  number; the more resolved picks in a bucket, the more it trusts the
-  observed hit rate. So it literally sharpens the more it scans.
+   Nothing here spends real money. Real bets (button taps) are tracked
+   separately in the same row.
 
-Storage: a single SQLite file (stdlib, no extra deps), path from
-KALSHI_LEARNING_DB or ./kalshi_learning.db next to this file.
+Storage: one SQLite file (stdlib, no deps), KALSHI_LEARNING_DB or
+./kalshi_learning.db next to this file.
 """
 
 import os
+import math
 import sqlite3
 import threading
 import datetime
@@ -33,11 +38,15 @@ DB_PATH = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "kalshi_learning.db"),
 )
 
-# Buckets of 10 percentage points across the 0-100 model scale.
-BUCKET_WIDTH = 10
-# Prior strength: how many "phantom" observations anchor the raw model number
-# before real outcomes outweigh it. Higher = slower, steadier learning.
-PRIOR_STRENGTH = 20
+# --- Calibration ---
+BUCKET_WIDTH = 10        # percentage-point buckets across the 0-100 model scale
+PRIOR_STRENGTH = 20      # phantom obs anchoring the raw number before data wins
+
+# --- Paper brain ---
+PAPER_BANKROLL_START = float(os.environ.get("KALSHI_PAPER_BANKROLL", "1000"))
+KELLY_FRACTION = float(os.environ.get("KALSHI_KELLY_FRACTION", "0.5"))  # half-Kelly
+PAPER_MAX_FRACTION = 0.10     # never risk >10% of the paper bankroll on one bet
+PAPER_MIN_EDGE_CENTS = int(os.environ.get("KALSHI_PAPER_MIN_EDGE", "3"))
 
 _LOCK = threading.Lock()
 
@@ -57,48 +66,148 @@ def init_db():
                 ticker         TEXT NOT NULL,
                 player         TEXT,
                 model_pct      INTEGER NOT NULL,   -- raw model P(NO wins), 0-100
-                calibrated_pct REAL,               -- corrected prob at send time
+                calibrated_pct REAL,               -- corrected prob at scan time
                 no_price       INTEGER NOT NULL,
-                edge           INTEGER,             -- calibrated edge at send time
+                edge           REAL,               -- calibrated edge at scan time
                 created_at     TEXT NOT NULL,
-                -- betting
+                -- real money (button taps)
                 bet            INTEGER NOT NULL DEFAULT 0,
                 stake          REAL,
                 count          INTEGER,
                 cost           REAL,
+                pnl            REAL,
+                -- paper brain (the bot's own imaginary bet)
+                paper_bet      INTEGER NOT NULL DEFAULT 0,
+                paper_count    INTEGER,
+                paper_cost     REAL,
+                paper_pnl      REAL,
+                bankroll_at    REAL,               -- paper bankroll when it decided
                 -- resolution
                 resolved       INTEGER NOT NULL DEFAULT 0,
                 won            INTEGER,             -- 1 NO side won, 0 lost
-                pnl            REAL,                -- realized $ (bets only)
                 resolved_at    TEXT
             )
             """
         )
+        # Lightweight migration for DBs created by an earlier version.
+        have = {r["name"] for r in c.execute("PRAGMA table_info(picks)")}
+        for col, decl in [
+            ("paper_bet", "INTEGER NOT NULL DEFAULT 0"),
+            ("paper_count", "INTEGER"),
+            ("paper_cost", "REAL"),
+            ("paper_pnl", "REAL"),
+            ("bankroll_at", "REAL"),
+            ("pnl", "REAL"),
+        ]:
+            if col not in have:
+                c.execute(f"ALTER TABLE picks ADD COLUMN {col} {decl}")
 
 
-def log_pick(pick_id: str, pick: dict, calibrated_pct: float):
-    """Record that a pick was surfaced (bet or not)."""
+# ----------------------------------------------------------------------
+# Calibration
+# ----------------------------------------------------------------------
+def _bucket_bounds(model_pct: float) -> tuple[int, int]:
+    b = min(int(model_pct) // BUCKET_WIDTH, (100 // BUCKET_WIDTH) - 1)
+    return b * BUCKET_WIDTH, (b + 1) * BUCKET_WIDTH
+
+
+def calibrate(model_pct: float) -> float:
+    """Correct a raw model probability toward the observed hit rate in its
+    bucket, shrunk by PRIOR_STRENGTH. Returns 0-100."""
+    lo, hi = _bucket_bounds(model_pct)
+    with _LOCK, _conn() as c:
+        row = c.execute(
+            "SELECT COUNT(*) n, COALESCE(SUM(won),0) wins FROM picks "
+            "WHERE resolved=1 AND model_pct >= ? AND model_pct < ?",
+            (lo, hi),
+        ).fetchone()
+    p_raw = model_pct / 100.0
+    calibrated = (row["wins"] + PRIOR_STRENGTH * p_raw) / (row["n"] + PRIOR_STRENGTH)
+    return round(calibrated * 100.0, 1)
+
+
+# ----------------------------------------------------------------------
+# Paper brain
+# ----------------------------------------------------------------------
+def _paper_cash() -> tuple[float, float]:
+    """Returns (equity, available).
+      equity    = start + realized PnL from settled paper bets (net worth).
+      available = equity minus cash tied up in open (unsettled) paper bets.
+    Sizing must use `available` so the brain can never commit money it doesn't
+    have — that's what kept the paper bankroll from going negative."""
+    with _LOCK, _conn() as c:
+        row = c.execute(
+            """
+            SELECT
+              COALESCE(SUM(CASE WHEN resolved=1 THEN paper_pnl END),0.0) realized,
+              COALESCE(SUM(CASE WHEN resolved=0 THEN paper_cost END),0.0) outstanding
+            FROM picks WHERE paper_bet=1
+            """
+        ).fetchone()
+    equity = PAPER_BANKROLL_START + row["realized"]
+    return equity, max(0.0, equity - row["outstanding"])
+
+
+def paper_bankroll() -> float:
+    """The bot's paper equity: start + realized PnL from settled bets."""
+    return _paper_cash()[0]
+
+
+def _kelly_fraction(p: float, price_cents: int) -> float:
+    """Fractional Kelly for a NO contract: risk `price`¢ to win (100-price)¢.
+    p is the (calibrated) win probability, 0-1."""
+    if price_cents <= 0 or price_cents >= 100:
+        return 0.0
+    b = (100 - price_cents) / price_cents          # net odds
+    f = p - (1 - p) / b                            # full Kelly
+    return max(0.0, f) * KELLY_FRACTION
+
+
+def _paper_decision(calibrated_pct: float, edge: float, price_cents: int,
+                    equity: float, available: float):
+    """Decide the bot's own imaginary bet. Returns (paper_bet, count, cost).
+    Kelly sizes off equity, but the stake is capped at available cash so open
+    positions can't over-commit the bankroll."""
+    if edge < PAPER_MIN_EDGE_CENTS or available <= 0:
+        return 0, 0, 0.0
+    f = min(_kelly_fraction(calibrated_pct / 100.0, price_cents), PAPER_MAX_FRACTION)
+    stake = min(f * equity, available)             # never spend cash you don't have
+    count = int((stake * 100) // price_cents)
+    if count < 1:
+        return 0, 0, 0.0
+    return 1, count, round(count * price_cents / 100.0, 2)
+
+
+def observe(pick_id: str, pick: dict, calibrated_pct: float) -> dict:
+    """Log a scanned pick AND record the bot's own paper decision on it.
+    Called for every pick the scanner produces, above or below the ping gate.
+    Returns the paper decision so the caller can surface it."""
+    price = int(pick["no_price"])
+    edge = round(calibrated_pct - price, 1)
+    equity, available = _paper_cash()
+    paper_bet, count, cost = _paper_decision(calibrated_pct, edge, price, equity, available)
     with _LOCK, _conn() as c:
         c.execute(
             """
             INSERT OR IGNORE INTO picks
-                (pick_id, ticker, player, model_pct, calibrated_pct,
-                 no_price, edge, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (pick_id, ticker, player, model_pct, calibrated_pct, no_price,
+                 edge, created_at, paper_bet, paper_count, paper_cost, bankroll_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
-                pick_id,
-                pick["ticker"],
-                pick.get("player"),
-                int(pick["model_pct"]),
-                round(float(calibrated_pct), 2),
-                int(pick["no_price"]),
-                int(pick.get("edge", 0)),
-                datetime.datetime.utcnow().isoformat(),
+                pick_id, pick["ticker"], pick.get("player"),
+                int(pick["model_pct"]), round(float(calibrated_pct), 2), price,
+                edge, datetime.datetime.utcnow().isoformat(),
+                paper_bet, count, cost, round(equity, 2),
             ),
         )
+    return {"paper_bet": paper_bet, "count": count, "cost": cost,
+            "equity": equity, "available": available}
 
 
+# ----------------------------------------------------------------------
+# Real-money bet (button tap) + resolution
+# ----------------------------------------------------------------------
 def record_bet(pick_id: str, stake: float, count: int, cost: float):
     with _LOCK, _conn() as c:
         c.execute(
@@ -108,109 +217,114 @@ def record_bet(pick_id: str, stake: float, count: int, cost: float):
 
 
 def unresolved() -> list[sqlite3.Row]:
-    """Picks that have not settled yet, for the resolution poller."""
     with _LOCK, _conn() as c:
         return c.execute(
-            "SELECT pick_id, ticker, no_price, count, bet FROM picks WHERE resolved=0"
+            "SELECT pick_id, ticker FROM picks WHERE resolved=0"
         ).fetchall()
 
 
-def resolve_pick(pick_id: str, won: bool, no_price: int, count, bet: int):
-    """Mark a pick settled and compute realized PnL for actual bets."""
-    pnl = 0.0
-    if bet and count:
-        if won:
-            pnl = count * (100 - no_price) / 100.0   # settles at 100¢
-        else:
-            pnl = -(count * no_price / 100.0)         # settles at 0¢
+def resolve_pick(pick_id: str, won: bool):
+    """Settle a pick: score both the real bet and the paper bet on it."""
     with _LOCK, _conn() as c:
+        row = c.execute(
+            "SELECT no_price, bet, count, paper_bet, paper_count "
+            "FROM picks WHERE pick_id=?",
+            (pick_id,),
+        ).fetchone()
+        if row is None:
+            return
+        price = row["no_price"]
+
+        def pnl(n):
+            if not n:
+                return 0.0
+            return n * (100 - price) / 100.0 if won else -(n * price / 100.0)
+
+        real_pnl = round(pnl(row["count"]), 2) if row["bet"] else None
+        paper_pnl = round(pnl(row["paper_count"]), 2) if row["paper_bet"] else None
         c.execute(
-            "UPDATE picks SET resolved=1, won=?, pnl=?, resolved_at=? WHERE pick_id=?",
-            (1 if won else 0, round(pnl, 2), datetime.datetime.utcnow().isoformat(), pick_id),
+            "UPDATE picks SET resolved=1, won=?, pnl=?, paper_pnl=?, resolved_at=? "
+            "WHERE pick_id=?",
+            (1 if won else 0, real_pnl, paper_pnl,
+             datetime.datetime.utcnow().isoformat(), pick_id),
         )
 
 
-def _bucket(model_pct: float) -> int:
-    b = int(model_pct) // BUCKET_WIDTH
-    return min(b, (100 // BUCKET_WIDTH) - 1)  # clamp 100 into the top bucket
-
-
-def calibrate(model_pct: float) -> float:
-    """
-    Map a raw model probability (0-100) to a calibrated one using the observed
-    hit rate in its bucket, shrunk toward the raw number by PRIOR_STRENGTH.
-
-      calibrated = (wins + K * p_raw) / (n + K)
-
-    With no history this returns model_pct unchanged; it moves toward the real
-    hit rate as resolved picks in the bucket accumulate.
-    """
-    b = _bucket(model_pct)
-    lo, hi = b * BUCKET_WIDTH, (b + 1) * BUCKET_WIDTH
-    with _LOCK, _conn() as c:
-        row = c.execute(
-            """
-            SELECT COUNT(*) AS n, COALESCE(SUM(won), 0) AS wins
-            FROM picks
-            WHERE resolved=1 AND model_pct >= ? AND model_pct < ?
-            """,
-            (lo, hi),
-        ).fetchone()
-    n, wins = row["n"], row["wins"]
-    p_raw = model_pct / 100.0
-    calibrated = (wins + PRIOR_STRENGTH * p_raw) / (n + PRIOR_STRENGTH)
-    return round(calibrated * 100.0, 1)
+# ----------------------------------------------------------------------
+# Scoring / reporting
+# ----------------------------------------------------------------------
+def _brier(rows, prob_col: str) -> float | None:
+    """Mean squared error of a probability column vs actual outcome. Lower is
+    better; 0.25 is the coin-flip baseline. None if no data."""
+    vals = [((r[prob_col] / 100.0) - r["won"]) ** 2 for r in rows if r[prob_col] is not None]
+    return sum(vals) / len(vals) if vals else None
 
 
 def stats_summary() -> str:
     with _LOCK, _conn() as c:
-        totals = c.execute(
+        t = c.execute(
             """
             SELECT
-                COUNT(*)                                   AS picks,
-                COALESCE(SUM(resolved), 0)                 AS resolved,
-                COALESCE(SUM(bet), 0)                       AS bets,
-                COALESCE(SUM(CASE WHEN bet=1 AND resolved=1 THEN 1 ELSE 0 END), 0) AS settled_bets,
-                COALESCE(SUM(CASE WHEN bet=1 THEN won ELSE 0 END), 0)              AS bet_wins,
-                COALESCE(SUM(CASE WHEN bet=1 THEN pnl ELSE 0 END), 0.0)           AS pnl,
-                COALESCE(SUM(CASE WHEN bet=1 THEN cost ELSE 0 END), 0.0)          AS staked
+              COUNT(*) picks,
+              COALESCE(SUM(resolved),0) resolved,
+              COALESCE(SUM(bet),0) bets,
+              COALESCE(SUM(CASE WHEN bet=1 AND resolved=1 THEN 1 END),0) rbet_settled,
+              COALESCE(SUM(CASE WHEN bet=1 AND resolved=1 THEN won END),0) rbet_wins,
+              COALESCE(SUM(CASE WHEN bet=1 AND resolved=1 THEN pnl END),0.0) rpnl,
+              COALESCE(SUM(CASE WHEN bet=1 AND resolved=1 THEN cost END),0.0) rstaked,
+              COALESCE(SUM(paper_bet),0) pbets,
+              COALESCE(SUM(CASE WHEN paper_bet=1 AND resolved=1 THEN 1 END),0) pbet_settled,
+              COALESCE(SUM(CASE WHEN paper_bet=1 AND resolved=1 THEN won END),0) pbet_wins,
+              COALESCE(SUM(CASE WHEN paper_bet=1 AND resolved=1 THEN paper_pnl END),0.0) ppnl,
+              COALESCE(SUM(CASE WHEN paper_bet=1 AND resolved=1 THEN paper_cost END),0.0) pstaked
             FROM picks
             """
         ).fetchone()
+        resolved_rows = c.execute(
+            "SELECT won, model_pct, calibrated_pct FROM picks WHERE resolved=1"
+        ).fetchall()
         buckets = c.execute(
-            """
-            SELECT (model_pct / ?) AS b,
-                   COUNT(*) AS n,
-                   COALESCE(SUM(won), 0) AS wins
-            FROM picks
-            WHERE resolved=1
-            GROUP BY b
-            ORDER BY b
-            """,
+            "SELECT (model_pct/?) b, COUNT(*) n, COALESCE(SUM(won),0) wins "
+            "FROM picks WHERE resolved=1 GROUP BY b ORDER BY b",
             (BUCKET_WIDTH,),
         ).fetchall()
 
-    lines = [
-        f"📊 Track record",
-        f"Picks logged: {totals['picks']}  |  Resolved: {totals['resolved']}",
-        f"Bets placed: {totals['bets']}  |  Settled: {totals['settled_bets']}",
-    ]
-    if totals["settled_bets"]:
-        wr = 100.0 * totals["bet_wins"] / totals["settled_bets"]
-        lines.append(f"Bet win rate: {wr:.0f}%  ({totals['bet_wins']}/{totals['settled_bets']})")
-    if totals["staked"]:
-        roi = 100.0 * totals["pnl"] / totals["staked"]
-        lines.append(f"Realized PnL: ${totals['pnl']:.2f}  |  ROI: {roi:+.0f}%")
+    L = []
+    L.append("🧠 *Paper brain* (imaginary money, every scan)")
+    bankroll = PAPER_BANKROLL_START + t["ppnl"]
+    L.append(f"Bankroll: ${bankroll:,.2f}  (start ${PAPER_BANKROLL_START:,.0f}, "
+             f"{'+' if t['ppnl']>=0 else ''}{t['ppnl']:.2f})")
+    L.append(f"Paper bets: {t['pbets']}  |  settled: {t['pbet_settled']}")
+    if t["pbet_settled"]:
+        pwr = 100.0 * t["pbet_wins"] / t["pbet_settled"]
+        L.append(f"Win rate: {pwr:.0f}%  ({t['pbet_wins']}/{t['pbet_settled']})")
+    if t["pstaked"]:
+        L.append(f"Paper ROI: {100.0*t['ppnl']/t['pstaked']:+.0f}%  "
+                 f"(risked ${t['pstaked']:.2f})")
+
+    L.append("\n📊 *Track record*")
+    L.append(f"Picks logged: {t['picks']}  |  resolved: {t['resolved']}")
+    br_raw, br_cal = _brier(resolved_rows, "model_pct"), _brier(resolved_rows, "calibrated_pct")
+    if br_raw is not None:
+        arrow = ""
+        if br_cal is not None:
+            arrow = "  ✅ sharper" if br_cal < br_raw else "  (raw still ahead)"
+        L.append(f"Accuracy (Brier, lower=better): raw {br_raw:.3f} → "
+                 f"calibrated {br_cal:.3f}{arrow}")
+        L.append("  (0.25 = coin flip)")
+
+    if t["rbet_settled"]:
+        rwr = 100.0 * t["rbet_wins"] / t["rbet_settled"]
+        L.append(f"\n💵 Real bets settled: {t['rbet_settled']}  |  "
+                 f"win {rwr:.0f}%  |  PnL ${t['rpnl']:.2f}")
 
     if buckets:
-        lines.append("\nCalibration (model% → actual):")
-        for row in buckets:
-            b = int(row["b"])
-            lo, hi = b * BUCKET_WIDTH, (b + 1) * BUCKET_WIDTH
-            n, wins = row["n"], row["wins"]
-            actual = 100.0 * wins / n if n else 0.0
-            lines.append(f"  {lo:>3}-{hi:<3}%:  {actual:5.0f}%  (n={n})")
+        L.append("\nCalibration (model% → actual):")
+        for r in buckets:
+            b = int(r["b"]); lo, hi = b * BUCKET_WIDTH, (b + 1) * BUCKET_WIDTH
+            actual = 100.0 * r["wins"] / r["n"] if r["n"] else 0.0
+            L.append(f"  {lo:>3}-{hi:<3}%:  {actual:5.0f}%  (n={r['n']})")
     else:
-        lines.append("\nNo settled picks yet — calibration kicks in as they resolve.")
+        L.append("\nNo settled picks yet — the brain scores itself as they resolve.")
 
-    return "\n".join(lines)
+    return "\n".join(L)
