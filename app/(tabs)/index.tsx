@@ -10,12 +10,13 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import { api } from '@/services/api';
 import { useStore } from '@/store/useStore';
 import { Claim } from '@/constants/types';
 import { ClaimCard } from '@/components/home/ClaimCard';
 import { ClaimCardSkeleton } from '@/components/ui/SkeletonLoader';
-import { Colors, Spacing } from '@/constants/theme';
+import { Colors, Spacing, Radius } from '@/constants/theme';
 
 const CATEGORIES = ['All', 'Politics', 'Science', 'Health', 'History', 'Economy', 'Media', 'Technology'];
 
@@ -194,6 +195,19 @@ export default function FeedScreen() {
           }
         />
       )}
+
+      {/* Floating "New Check" button — makes the core action obvious from the Feed */}
+      <TouchableOpacity
+        style={[styles.fab, { bottom: insets.bottom + 84 }]}
+        activeOpacity={0.85}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          router.push('/(tabs)/submit');
+        }}
+      >
+        <Text style={styles.fabPlus}>+</Text>
+        <Text style={styles.fabLabel}>New Check</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -207,6 +221,35 @@ function getGreeting() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  fab: {
+    position: 'absolute',
+    right: Spacing.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingLeft: 16,
+    paddingRight: 20,
+    height: 52,
+    borderRadius: Radius.full,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 14,
+    elevation: 10,
+  },
+  fabPlus: {
+    color: Colors.textPrimary,
+    fontSize: 24,
+    fontWeight: '600',
+    marginRight: 8,
+    marginTop: -2,
+  },
+  fabLabel: {
+    color: Colors.textPrimary,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.2,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
