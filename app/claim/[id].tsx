@@ -130,11 +130,20 @@ export default function ClaimDetailScreen() {
   const handleShare = async () => {
     if (!claim) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Build a share that actually spreads: the claim + a taste of two opposing
+    // takes (the "every angle" aha), then a clear hook to get the app.
+    const teaser = (claim.perspectives ?? [])
+      .filter((p) => ['left', 'right', 'scientific', 'contrarian'].includes(p.type))
+      .slice(0, 2)
+      .map((p) => `${p.label}: ${p.summary}`)
+      .join('\n\n');
+    const body =
+      `🔍 "${claim.text}"\n\n` +
+      (teaser ? `Two sides of it:\n\n${teaser}\n\n` : '') +
+      `See every angle — left, right, historical, scientific, and contrarian — with no verdict pushed on you.\n\n` +
+      `Reality Check on Google Play → https://play.google.com/store/apps/details?id=com.solrae.realitycheck`;
     try {
-      await Share.share({
-        message: `"${claim.text}"\n\nSee all perspectives on Reality Check.`,
-        title: 'Reality Check',
-      });
+      await Share.share({ message: body, title: 'Reality Check' });
     } catch {}
   };
 
