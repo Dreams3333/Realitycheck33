@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { query, queryOne } from '../db/index.js';
 import { requireAuth } from '../middleware/auth.js';
-import { generatePerspectives, calculateHeatScore } from '../services/claude.js';
+import { analyzeClaim, GeneratedPerspective } from '../services/claude.js';
 import { Claim, Perspective, User } from '../types/index.js';
 
 const router = Router();
@@ -86,11 +86,22 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
   });
 });
 
+const MIN_CLAIM_LENGTH = 10;
+const MAX_CLAIM_LENGTH = 500;
+
 // POST /api/claims
 router.post('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
   const { text, category } = req.body;
-  if (!text?.trim() || !category) {
+  const trimmed = typeof text === 'string' ? text.trim() : '';
+
+  if (!trimmed || !category) {
     res.status(400).json({ message: 'Text and category are required' });
+    return;
+  }
+  if (trimmed.length < MIN_CLAIM_LENGTH || trimmed.length > MAX_CLAIM_LENGTH) {
+    res.status(400).json({
+      message: `Claim text must be between ${MIN_CLAIM_LENGTH} and ${MAX_CLAIM_LENGTH} characters.`,
+    });
     return;
   }
 
@@ -115,21 +126,61 @@ router.post('/', requireAuth, async (req: Request, res: Response): Promise<void>
   // Create claim
   const [claim] = await query<Claim>(
     'INSERT INTO claims (text, category, submitted_by, status) VALUES ($1, $2, $3, $4) RETURNING *',
-    [text.trim(), category, user.id, 'processing']
+    [trimmed, category, user.id, 'processing']
   );
 
-  // Generate perspectives synchronously (required for Vercel serverless — no background jobs)
   try {
-    const [perspectives, heatScore] = await Promise.all([
-      generatePerspectives(text, category, user.tier === 'premium'),
-      calculateHeatScore(text),
-    ]);
+    const isPremium = user.tier === 'premium';
+
+    // Dedupe: if an identical claim (case/whitespace-insensitive) was already
+    // processed, reuse its perspectives/heat score instead of calling Claude again.
+    // Skip reuse when a premium user needs the contrarian perspective and the
+    // cached claim doesn't have one (e.g. it was originally submitted by a free user).
+    const existing = await queryOne<Claim>(
+      `SELECT * FROM claims
+       WHERE id != $1 AND status = 'processed' AND LOWER(TRIM(text)) = LOWER($2)
+         AND created_at > NOW() - INTERVAL '7 days'
+       ORDER BY created_at DESC LIMIT 1`,
+      [claim.id, trimmed]
+    );
+
+    let perspectives: GeneratedPerspective[];
+    let heatScore: number;
+
+    let reused = false;
+    if (existing) {
+      const existingPerspectives = await query<any>(
+        'SELECT * FROM perspectives WHERE claim_id = $1',
+        [existing.id]
+      );
+      const hasContrarian = existingPerspectives.some((p) => p.type === 'contrarian');
+      if (!isPremium || hasContrarian) {
+        perspectives = existingPerspectives
+          .filter((p) => isPremium || !p.is_premium_only)
+          .map((p) => ({
+            type: p.type,
+            label: p.label,
+            summary: p.summary,
+            analysis: p.analysis,
+            sources: p.sources,
+            isPremiumOnly: p.is_premium_only,
+          }));
+        heatScore = existing.heat_score;
+        reused = true;
+      }
+    }
+
+    if (!reused) {
+      const analysis = await analyzeClaim(trimmed, category, isPremium);
+      perspectives = analysis.perspectives;
+      heatScore = analysis.heatScore;
+    }
 
     await query('UPDATE claims SET heat_score = $1, status = $2, updated_at = NOW() WHERE id = $3', [
-      heatScore, 'processed', claim.id,
+      heatScore!, 'processed', claim.id,
     ]);
 
-    for (const p of perspectives) {
+    for (const p of perspectives!) {
       await query(
         `INSERT INTO perspectives (claim_id, type, label, summary, analysis, sources, is_premium_only)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,

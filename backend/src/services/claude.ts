@@ -45,36 +45,55 @@ function mockPerspectives(claimText: string, isPremium: boolean): GeneratedPersp
   }));
 }
 
-export async function generatePerspectives(
+export interface ClaimAnalysis {
+  perspectives: GeneratedPerspective[];
+  heatScore: number;
+}
+
+function mockAnalysis(claimText: string, isPremium: boolean): ClaimAnalysis {
+  return {
+    perspectives: mockPerspectives(claimText, isPremium),
+    heatScore: Math.floor(Math.random() * 40) + 40, // 40-80
+  };
+}
+
+// Combined into a single Claude call (was two: generatePerspectives + calculateHeatScore)
+// to cut API calls per claim submission in half.
+export async function analyzeClaim(
   claimText: string,
   category: string,
   isPremium: boolean
-): Promise<GeneratedPerspective[]> {
-  if (!client) return mockPerspectives(claimText, isPremium);
+): Promise<ClaimAnalysis> {
+  if (!client) return mockAnalysis(claimText, isPremium);
 
   const perspectiveTypes = isPremium
     ? (['left', 'right', 'historical', 'scientific', 'contrarian'] as const)
     : (['left', 'right', 'historical', 'scientific'] as const);
 
-  const prompt = `Analyze this claim from ${perspectiveTypes.length} perspectives. Be concise and sharp.
+  const prompt = `Analyze this claim from ${perspectiveTypes.length} perspectives, and rate its controversy level. Be concise and sharp.
 
 CLAIM: "${claimText}"
 CATEGORY: ${category}
 
 PERSPECTIVES: ${perspectiveTypes.map(t => `${t.toUpperCase()}: ${PERSPECTIVE_PROMPTS[t]}`).join(' | ')}
 
-Return a JSON array. Each element:
-- type: the perspective key (lowercase)
-- label: display name (e.g. "Left Perspective")
-- summary: one punchy sentence, max 100 chars
-- analysis: one focused paragraph, max 80 words, no fluff
-- sources: 1-2 objects with { title, url, domain } — real sources only
-
-ONLY return the JSON array, nothing else.`;
+Return ONLY a JSON object with this exact shape, nothing else:
+{
+  "heatScore": <integer 0-100, where 0 is non-controversial and 100 is extremely divisive>,
+  "perspectives": [
+    {
+      "type": "<perspective key, lowercase>",
+      "label": "<display name, e.g. \\"Left Perspective\\">",
+      "summary": "<one punchy sentence, max 100 chars>",
+      "analysis": "<one focused paragraph, max 80 words, no fluff>",
+      "sources": [{ "title": "...", "url": "...", "domain": "..." }]
+    }
+  ]
+}`;
 
   const message = await client.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 2000,
+    max_tokens: 1800,
     messages: [{ role: 'user', content: prompt }],
   });
 
@@ -86,22 +105,24 @@ ONLY return the JSON array, nothing else.`;
   const content = message.content[0];
   if (content.type !== 'text') throw new Error('Unexpected response type from Claude');
 
-  // Extract the JSON array — skip any preamble (e.g. "[Note: ...]") by looking
-  // specifically for a [ followed by { which signals the start of an object array.
+  // Extract the JSON object — skip any preamble by looking for the outermost { ... }.
   const text = content.text;
-  const match = text.match(/(\[\s*\{[\s\S]*\}\s*\])/);
+  const match = text.match(/(\{[\s\S]*\})/);
   if (!match) {
-    console.error('Claude no object array found. Raw response:', text.slice(0, 500));
-    throw new Error('Claude returned no JSON array');
+    console.error('Claude no JSON object found. Raw response:', text.slice(0, 500));
+    throw new Error('Claude returned no JSON object');
   }
 
-  let raw: Array<{
-    type: GeneratedPerspective['type'];
-    label: string;
-    summary: string;
-    analysis: string;
-    sources: Source[];
-  }>;
+  let raw: {
+    heatScore: number;
+    perspectives: Array<{
+      type: GeneratedPerspective['type'];
+      label: string;
+      summary: string;
+      analysis: string;
+      sources: Source[];
+    }>;
+  };
   try {
     raw = JSON.parse(match[1]);
   } catch {
@@ -109,30 +130,15 @@ ONLY return the JSON array, nothing else.`;
     throw new Error('Claude returned malformed JSON');
   }
 
-  return raw.map((p) => ({
-    ...p,
-    isPremiumOnly: p.type === 'contrarian',
-  }));
-}
+  const heatScore = Number.isFinite(raw.heatScore)
+    ? Math.max(0, Math.min(100, Math.round(raw.heatScore)))
+    : 50;
 
-export async function calculateHeatScore(claimText: string): Promise<number> {
-  if (!client) return Math.floor(Math.random() * 40) + 40; // mock: 40-80
-
-  const message = await client.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 10,
-    messages: [
-      {
-        role: 'user',
-        content: `Rate the political/social controversy level of this claim on a scale of 0-100, where 0 is non-controversial and 100 is extremely divisive. Respond with ONLY a number.
-
-CLAIM: "${claimText}"`,
-      },
-    ],
-  });
-
-  const content = message.content[0];
-  if (content.type !== 'text') return 50;
-  const score = parseInt(content.text.trim(), 10);
-  return isNaN(score) ? 50 : Math.max(0, Math.min(100, score));
+  return {
+    heatScore,
+    perspectives: raw.perspectives.map((p) => ({
+      ...p,
+      isPremiumOnly: p.type === 'contrarian',
+    })),
+  };
 }
